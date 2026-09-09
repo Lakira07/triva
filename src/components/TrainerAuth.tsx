@@ -26,8 +26,14 @@ export default function TrainerAuth({ onAuthed, onBack }: TrainerAuthProps) {
       setLoading(false);
       return;
     }
+    const team = data as Team;
+    if (team.code_expires_at && new Date(team.code_expires_at).getTime() <= Date.now()) {
+      setError('Tränarkoden har löpt ut. Kontakta administratören för att förnya koden.');
+      setLoading(false);
+      return;
+    }
     setLoading(false);
-    onAuthed(data as Team);
+    onAuthed(team);
   };
 
   return (

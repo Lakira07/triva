@@ -14,6 +14,7 @@ export interface Team {
   trainer_code: string;
   owner_id: string | null;
   created_at: string;
+  code_expires_at: string | null;
 }
 
 export interface Question {

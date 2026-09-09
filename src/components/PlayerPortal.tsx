@@ -310,10 +310,13 @@ function TeamLoginScreen({ onTeamFound }: { onTeamFound: (team: Team) => void })
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
+  const [expired, setExpired] = useState(false);
+
   const handleLogin = async () => {
     if (!codeInput.trim() || loading) return;
     setLoading(true);
     setError(false);
+    setExpired(false);
     const { data, error } = await supabase
       .from('teams')
       .select('*')
@@ -324,8 +327,14 @@ function TeamLoginScreen({ onTeamFound }: { onTeamFound: (team: Team) => void })
       setLoading(false);
       return;
     }
+    const team = data as Team;
+    if (team.code_expires_at && new Date(team.code_expires_at).getTime() <= Date.now()) {
+      setExpired(true);
+      setLoading(false);
+      return;
+    }
     setLoading(false);
-    onTeamFound(data as Team);
+    onTeamFound(team);
   };
 
   return (
@@ -362,6 +371,13 @@ function TeamLoginScreen({ onTeamFound }: { onTeamFound: (team: Team) => void })
           <p className="text-sm text-red-500 mt-2 flex items-center gap-1">
             Ogiltig lagkod. Kontrollera med din tränare.
           </p>
+        )}
+        {expired && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-sm text-red-600 font-medium">
+              Lagkoden har löpt ut. Be din tränare förnya koden.
+            </p>
+          </div>
         )}
         <button
           onClick={handleLogin}

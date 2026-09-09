@@ -19,6 +19,8 @@ import {
   Settings,
   BarChart3,
   Sparkles,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase, type Question, type QuestionType, type ResponseWithAnswers, type Team } from '@/lib/supabase';
 import PlayersView from '@/components/PlayersView';
@@ -248,6 +250,29 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
             </button>
           </div>
         </div>
+
+        {team.code_expires_at && (
+          (() => {
+            const isExpired = new Date(team.code_expires_at).getTime() <= Date.now();
+            const daysLeft = Math.ceil((new Date(team.code_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            return (
+              <div className={`mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5 ${isExpired ? 'bg-red-50 border border-red-200' : daysLeft <= 3 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50 border border-gray-200'}`}>
+                {isExpired ? (
+                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                ) : (
+                  <Clock className={`w-4 h-4 flex-shrink-0 ${daysLeft <= 3 ? 'text-amber-500' : 'text-gray-400'}`} />
+                )}
+                <p className={`text-xs font-bold ${isExpired ? 'text-red-600' : daysLeft <= 3 ? 'text-amber-600' : 'text-gray-600'}`}>
+                  {isExpired
+                    ? 'Koderna har löpt ut'
+                    : daysLeft === 0
+                    ? 'Koderna löper ut idag'
+                    : `Koderna giltiga i ${daysLeft} dag${daysLeft === 1 ? '' : 'ar'} (${new Date(team.code_expires_at).toLocaleDateString('sv-SE')})`}
+                </p>
+              </div>
+            );
+          })()
+        )}
       </div>
 
       {/* Tabs */}
