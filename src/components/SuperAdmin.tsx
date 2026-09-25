@@ -18,6 +18,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { supabase, type Team } from '@/lib/supabase';
+import CodeExpiryControl from '@/components/CodeExpiryControl';
 
 interface TeamWithStats extends Team {
   player_count: number;
@@ -138,6 +139,12 @@ export default function SuperAdmin({ session, onLogout }: SuperAdminProps) {
       return;
     }
     await fetchTeams();
+  };
+
+  const updateTeamExpiry = (teamId: string, codeExpiresAt: string | null) => {
+    setTeams((currentTeams) =>
+      currentTeams.map((team) => (team.id === teamId ? { ...team, code_expires_at: codeExpiresAt } : team))
+    );
   };
 
   const filteredTeams = teams.filter((t) =>
@@ -384,6 +391,12 @@ export default function SuperAdmin({ session, onLogout }: SuperAdminProps) {
                     {t.owner_email ?? 'Ej tilldelad'}
                   </span>
                 </div>
+
+                <CodeExpiryControl
+                  teamId={t.id}
+                  codeExpiresAt={t.code_expires_at}
+                  onSaved={(codeExpiresAt) => updateTeamExpiry(t.id, codeExpiresAt)}
+                />
 
                 {/* Danger zone */}
                 <div className="pt-1">
