@@ -16,8 +16,12 @@ import {
   TrendingUp,
   ChevronRight,
   ArrowLeft as BackArrow,
+  Home,
+  Target,
+  CalendarDays,
+  BarChart3,
 } from 'lucide-react';
-import { supabase, type Player, type Question, type Team, type AppSettings, WELLBEING_METRICS } from '@/lib/supabase';
+import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, WELLBEING_METRICS } from '@/lib/supabase';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -44,6 +48,7 @@ const METRIC_COLORS: Record<string, string> = {
 };
 
 type View = 'team-login' | 'player-login' | 'hub' | 'survey' | 'wellbeing' | 'survey-done' | 'wellbeing-done';
+type PlayerSection = 'dashboard' | 'iup' | 'training' | 'status' | 'development';
 
 function startOfWeek(d: Date): Date {
   const date = new Date(d);
@@ -62,6 +67,8 @@ export default function PlayerPortal() {
   const [settings, setSettings] = useState<AppSettings>({ weekly_survey_required: 1, weekly_wellbeing_required: 1 });
   const [weeklySurveyCount, setWeeklySurveyCount] = useState(0);
   const [weeklyWellbeingCount, setWeeklyWellbeingCount] = useState(0);
+  const [recentWellbeing, setRecentWellbeing] = useState<WellbeingEntry[]>([]);
+  const [section, setSection] = useState<PlayerSection>('dashboard');
   const [loading, setLoading] = useState(true);
 
   const fetchProgress = useCallback(async (playerId: string) => {
@@ -82,6 +89,18 @@ export default function PlayerPortal() {
     ]);
     setWeeklySurveyCount(sCount ?? 0);
     setWeeklyWellbeingCount(wCount ?? 0);
+  }, [team]);
+
+  const fetchRecentWellbeing = useCallback(async (playerId: string) => {
+    if (!team) return;
+    const { data } = await supabase
+      .from('wellbeing_entries')
+      .select('*')
+      .eq('player_id', playerId)
+      .eq('team_id', team.id)
+      .order('created_at', { ascending: false })
+      .limit(7);
+    setRecentWellbeing((data || []) as WellbeingEntry[]);
   }, [team]);
 
   const loadData = useCallback(async () => {
@@ -117,7 +136,7 @@ export default function PlayerPortal() {
   };
 
   const refreshAfterSubmit = async () => {
-    if (player) await fetchProgress(player.id);
+    if (player) await Promise.all([fetchProgress(player.id), fetchRecentWellbeing(player.id)]);
   };
 
   if (loading) {
@@ -147,7 +166,8 @@ export default function PlayerPortal() {
         team={team!}
         onLogin={async (p) => {
           setPlayer(p);
-          await fetchProgress(p.id);
+          await Promise.all([fetchProgress(p.id), fetchRecentWellbeing(p.id)]);
+          setSection('dashboard');
           setView('hub');
         }}
         onBack={handleTeamLogout}
@@ -208,7 +228,7 @@ export default function PlayerPortal() {
     );
   }
 
-  // HUB
+  // PLAYER WORKSPACE
   const surveyTarget = settings.weekly_survey_required;
   const surveyComplete = weeklySurveyCount >= surveyTarget;
   const surveyPct = surveyTarget > 0 ? Math.min((weeklySurveyCount / surveyTarget) * 100, 100) : 100;
@@ -217,90 +237,194 @@ export default function PlayerPortal() {
   const wbComplete = weeklyWellbeingCount >= wbTarget;
   const wbPct = wbTarget > 0 ? Math.min((weeklyWellbeingCount / wbTarget) * 100, 100) : 100;
 
+  const latestWellbeing = recentWellbeing[0];
+  const sections: { id: PlayerSection; label: string; icon: typeof Home }[] = [
+    { id: 'dashboard', label: 'Översikt', icon: Home },
+    { id: 'iup', label: 'Min IUP', icon: Target },
+    { id: 'training', label: 'Träning', icon: CalendarDays },
+    { id: 'status', label: 'Min status', icon: Heart },
+    { id: 'development', label: 'Utveckling', icon: BarChart3 },
+  ];
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 sm:px-6">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center ring-4 ring-black/5 shadow-lg">
-              <ShieldIcon className="w-7 h-7" />
+    <div className="min-h-screen bg-[#f5f6f2]">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="h-[72px] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#172b22] flex items-center justify-center">
+                <ShieldIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-lg font-extrabold text-gray-950">Triva</h1>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">{team!.name}</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-black tracking-tight">Triva</h1>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                {team!.name}
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:block text-right">
+                <p className="text-sm font-semibold text-gray-800">{player.name}</p>
+                <p className="text-xs text-gray-400">{player.position || 'Spelare'}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                aria-label="Logga ut"
+                title="Logga ut"
+                className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-950 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1 text-sm text-gray-400 hover:text-black transition-colors"
-          >
-            <LogOut className="w-4 h-4" /> Logga ut
-          </button>
+          <nav aria-label="Huvudmeny" className="flex gap-1 overflow-x-auto -mb-px">
+            {sections.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setSection(id)}
+                aria-current={section === id ? 'page' : undefined}
+                className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3 text-sm font-semibold transition-colors ${section === id ? 'border-[#315c43] text-[#234633]' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+              >
+                <Icon className="w-4 h-4" />{label}
+              </button>
+            ))}
+          </nav>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center flex-shrink-0 font-bold text-sm">
-            {player.jersey_number != null ? player.jersey_number : <Heart className="w-5 h-5" />}
-          </div>
-          <div>
-            <p className="font-semibold text-black text-sm">{player.name}</p>
-            {player.position && <p className="text-xs text-gray-400">{player.position}</p>}
-          </div>
-        </div>
-      </div>
+      </header>
 
-      {/* Weekly progress — two rings */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <ProgressRing
-          icon={<ListChecks className="w-5 h-5" />}
-          label="Enkät"
-          done={Math.min(weeklySurveyCount, surveyTarget)}
-          target={surveyTarget}
-          pct={surveyPct}
-          complete={surveyComplete}
-        />
-        <ProgressRing
-          icon={<TrendingUp className="w-5 h-5" />}
-          label="Välmående"
-          done={Math.min(weeklyWellbeingCount, wbTarget)}
-          target={wbTarget}
-          pct={wbPct}
-          complete={wbComplete}
-        />
-      </div>
+      <main className="max-w-5xl mx-auto px-4 py-7 sm:px-6 sm:py-9">
+        {section === 'dashboard' && (
+          <>
+            <div className="mb-7 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#557461]">{new Date().toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                <h2 className="mt-1 text-3xl font-extrabold text-gray-950">Hej {player.name.split(' ')[0]}</h2>
+                <p className="mt-1 text-sm text-gray-500">Små steg i vardagen bygger din utveckling.</p>
+              </div>
+              <button onClick={() => setSection('iup')} className="inline-flex items-center gap-2 self-start rounded-lg bg-[#234633] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#183525] transition-colors">
+                <Target className="w-4 h-4" /> Se min utvecklingsplan
+              </button>
+            </div>
 
-      {/* Action cards */}
-      <div className="space-y-3">
-        <ActionCard
-          onClick={() => setView('survey')}
-          disabled={questions.length === 0}
-          icon={<ListChecks className="w-6 h-6" />}
-          title="Spelarenkät"
-          subtitle={
-            questions.length === 0
-              ? 'Inga frågor just nu'
-              : surveyComplete
-              ? 'Klar för denna vecka'
-              : `${surveyTarget - weeklySurveyCount} inlämning(ar) kvar`
-          }
-          complete={surveyComplete && questions.length > 0}
-        />
-        <ActionCard
-          onClick={() => setView('wellbeing')}
-          icon={<Heart className="w-6 h-6" />}
-          title="Välmående"
-          subtitle={
-            wbComplete
-              ? 'Klar för denna vecka'
-              : `${wbTarget - weeklyWellbeingCount} rapport(er) kvar`
-          }
-          complete={wbComplete}
-        />
-      </div>
+            <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
+              <section className="rounded-xl bg-[#234633] p-5 text-white sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-green-100/70">Nästa steg</p>
+                    <h3 className="mt-3 max-w-lg text-xl font-bold">Din personliga utvecklingsplan börjar här</h3>
+                    <p className="mt-2 max-w-lg text-sm leading-6 text-green-50/75">Samla mål, träning, återhämtning och reflektion på ett ställe. Be din tränare lägga in ditt första mål.</p>
+                  </div>
+                  <Target className="hidden h-8 w-8 shrink-0 text-[#b5d0aa] sm:block" />
+                </div>
+                <button onClick={() => setSection('iup')} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-green-100">
+                  Öppna Min IUP <ChevronRight className="w-4 h-4" />
+                </button>
+              </section>
+
+              <section className="rounded-xl border border-gray-200 bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Morgonstatus</p>
+                    <h3 className="mt-1 text-base font-bold text-gray-900">{latestWellbeing ? 'Senaste rapport' : 'Hur känns kroppen idag?'}</h3>
+                  </div>
+                  <Heart className="h-5 w-5 text-[#557461]" />
+                </div>
+                {latestWellbeing ? (
+                  <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+                    {WELLBEING_METRICS.map(({ key, label }) => (
+                      <div key={key} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-gray-500">{label}</span><span className="font-bold text-gray-900">{latestWellbeing[key]}/5</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="mt-3 text-sm text-gray-500">Ingen status registrerad ännu.</p>}
+                <button onClick={() => setView('wellbeing')} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#315c43] hover:text-[#172b22]">
+                  {wbComplete ? 'Visa eller uppdatera status' : 'Registrera status'} <ChevronRight className="w-4 h-4" />
+                </button>
+              </section>
+
+              <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Den här veckan</p>
+                    <h3 className="mt-1 text-base font-bold text-gray-900">Dina uppföljningar</h3>
+                  </div>
+                  <button onClick={() => setSection('status')} className="text-sm font-semibold text-[#315c43] hover:underline">Visa status</button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <ProgressRing icon={<ListChecks className="w-5 h-5" />} label="Spelarenkät" done={Math.min(weeklySurveyCount, surveyTarget)} target={surveyTarget} pct={surveyPct} complete={surveyComplete} />
+                  <ProgressRing icon={<Heart className="w-5 h-5" />} label="Välmående" done={Math.min(weeklyWellbeingCount, wbTarget)} target={wbTarget} pct={wbPct} complete={wbComplete} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <ActionCard onClick={() => setView('survey')} disabled={questions.length === 0} icon={<ListChecks className="w-6 h-6" />} title="Spelarenkät" subtitle={questions.length === 0 ? 'Inga frågor just nu' : surveyComplete ? 'Klar för denna vecka' : `${surveyTarget - weeklySurveyCount} inlämning(ar) kvar`} complete={surveyComplete && questions.length > 0} />
+                  <ActionCard onClick={() => setView('wellbeing')} icon={<Heart className="w-6 h-6" />} title="Välmående" subtitle={wbComplete ? 'Klar för denna vecka' : `${wbTarget - weeklyWellbeingCount} rapport(er) kvar`} complete={wbComplete} />
+                </div>
+              </section>
+            </div>
+          </>
+        )}
+
+        {section === 'iup' && <EmptyPlanningSection icon={<Target className="w-6 h-6" />} eyebrow="Min IUP" title="Din personliga utvecklingskarta" description="Här samlas karriärmål, utvecklingsområden och konkreta fotbollsaktioner. Be tränaren lägga in din plan så kan ni följa arbetet tillsammans." />}
+        {section === 'training' && <EmptyPlanningSection icon={<CalendarDays className="w-6 h-6" />} eyebrow="Träning & belastning" title="Träningen kopplas till dina mål" description="Planerade pass, genomförd tid, faktisk belastning och berörda utvecklingsområden visas här när tränaren har lagt upp träningsplanen." />}
+        {section === 'status' && (
+          <div className="max-w-3xl">
+            <SectionHeading icon={<Heart className="w-5 h-5" />} eyebrow="Min status" title="Återhämtning börjar med en enkel check-in" description="Registrera sömn, energi, sinneslag, stress och stelhet. Det tar ungefär en minut." />
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <button onClick={() => setView('wellbeing')} className="flex min-h-36 flex-col items-start justify-between rounded-xl bg-[#234633] p-5 text-left text-white hover:bg-[#183525] transition-colors">
+                <Heart className="h-6 w-6 text-[#b5d0aa]" />
+                <span><span className="block font-bold">{wbComplete ? 'Uppdatera dagens status' : 'Fyll i morgonstatus'}</span><span className="mt-1 block text-sm text-green-50/70">Sömn · energi · sinneslag · stress · stelhet</span></span>
+              </button>
+              <div className="rounded-xl border border-gray-200 bg-white p-5">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Senaste registrering</p>
+                {latestWellbeing ? <>
+                  <p className="mt-1 font-bold text-gray-900">{new Date(latestWellbeing.created_at).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })}</p>
+                  <div className="mt-4 space-y-2">{WELLBEING_METRICS.map(({ key, label }) => <MetricBar key={key} label={label} value={latestWellbeing[key]} />)}</div>
+                </> : <p className="mt-2 text-sm text-gray-500">Dina rapporter visas här när du har skickat in en status.</p>}
+              </div>
+            </div>
+          </div>
+        )}
+        {section === 'development' && (
+          <div className="max-w-3xl">
+            <SectionHeading icon={<BarChart3 className="w-5 h-5" />} eyebrow="Utveckling" title="Följ arbetet över tid" description="Mål, träningsinsatser, återhämtning och reflektion hör ihop. Din utvecklingsbild blir komplett när IUP och träning finns upplagda." />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {['Teknik', 'Spelförståelse', 'Fysik', 'Psykologi'].map((area) => (
+                <div key={area} className="rounded-xl border border-gray-200 bg-white p-5">
+                  <p className="font-bold text-gray-900">{area}</p><p className="mt-2 text-sm text-gray-500">Ingen bedömning registrerad ännu</p>
+                  <div className="mt-4 h-1.5 rounded-full bg-gray-100" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+              <div className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-[#315c43]" /><h3 className="font-bold text-gray-900">Återhämtning</h3></div>
+              <p className="mt-2 text-sm text-gray-500">{recentWellbeing.length ? `${recentWellbeing.length} statusrapport(er) finns registrerade.` : 'Statushistorik visas när du har registrerat din första check-in.'}</p>
+              {recentWellbeing.length > 0 && <div className="mt-4 space-y-3">{(['sleep', 'energy', 'stress', 'soreness'] as const).map((key) => <MetricTrend key={key} label={WELLBEING_METRICS.find((metric) => metric.key === key)!.label} entries={recentWellbeing} metric={key} />)}</div>}
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
+}
+
+function SectionHeading({ icon, eyebrow, title, description }: { icon: React.ReactNode; eyebrow: string; title: string; description: string }) {
+  return <div><div className="flex items-center gap-2 text-[#315c43]">{icon}<p className="text-xs font-bold uppercase tracking-wider">{eyebrow}</p></div><h2 className="mt-3 text-2xl font-extrabold text-gray-950">{title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">{description}</p></div>;
+}
+
+function EmptyPlanningSection({ icon, eyebrow, title, description }: { icon: React.ReactNode; eyebrow: string; title: string; description: string }) {
+  return <div className="max-w-3xl"><SectionHeading icon={icon} eyebrow={eyebrow} title={title} description={description} /><div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8"><p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p><p className="mt-1 text-sm leading-6 text-gray-500">När innehållet är på plats visas det här tillsammans med din utvecklingshistorik.</p></div></div>;
+}
+
+function MetricBar({ label, value }: { label: string; value: number }) {
+  return <div><div className="mb-1 flex justify-between text-xs"><span className="text-gray-500">{label}</span><span className="font-bold text-gray-800">{value}/5</span></div><div className="h-1.5 rounded-full bg-gray-100"><div className="h-1.5 rounded-full bg-[#557461]" style={{ width: `${Math.max(0, Math.min(value, 5)) * 20}%` }} /></div></div>;
+}
+
+function MetricTrend({ label, entries, metric }: { label: string; entries: WellbeingEntry[]; metric: 'sleep' | 'energy' | 'stress' | 'soreness' }) {
+  const values = [...entries].reverse().map((entry) => entry[metric]);
+  const first = values[0];
+  const last = values[values.length - 1];
+  const direction = last > first ? 'Stiger' : last < first ? 'Sjunker' : 'Stabil';
+  return <div className="flex items-center justify-between gap-4 text-sm"><span className="w-24 text-gray-500">{label}</span><div className="flex flex-1 items-end gap-1" aria-label={`${label}: ${values.join(', ')}`}>
+    {values.map((value, index) => <div key={`${index}-${value}`} className="flex-1 rounded-t bg-[#86a38d]" style={{ height: `${Math.max(8, value * 7)}px` }} />)}
+  </div><span className="w-14 text-right text-xs font-semibold text-gray-600">{direction}</span></div>;
 }
 
 // --- TEAM LOGIN SCREEN ---

@@ -25,7 +25,7 @@ const METRIC_ICONS: Record<string, typeof Moon> = {
   soreness: Dumbbell,
 };
 
-export default function WellbeingView({ teamId }: { teamId: string }) {
+export default function WellbeingView({ teamId, initialPlayerId, onBackToList }: { teamId: string; initialPlayerId?: string | null; onBackToList?: () => void }) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [entries, setEntries] = useState<WellbeingEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,14 +38,18 @@ export default function WellbeingView({ teamId }: { teamId: string }) {
     ]);
     setPlayers((playerData || []) as Player[]);
     setEntries((entryData || []) as WellbeingEntry[]);
+    return (playerData || []) as Player[];
   }, [teamId]);
 
   useEffect(() => {
     (async () => {
-      await fetchAll();
+      const loadedPlayers = await fetchAll();
+      if (initialPlayerId) {
+        setSelectedPlayer(loadedPlayers.find((player) => player.id === initialPlayerId) || null);
+      }
       setLoading(false);
     })();
-  }, [fetchAll]);
+  }, [fetchAll, initialPlayerId]);
 
   const deleteEntry = async (id: string) => {
     const { error } = await supabase.from('wellbeing_entries').delete().eq('id', id);
@@ -108,7 +112,7 @@ export default function WellbeingView({ teamId }: { teamId: string }) {
     return (
       <div>
         <button
-          onClick={() => setSelectedPlayer(null)}
+          onClick={() => { setSelectedPlayer(null); onBackToList?.(); }}
           className="flex items-center gap-1 text-sm text-gray-500 hover:text-black font-medium mb-4"
         >
           ← Tillbaka

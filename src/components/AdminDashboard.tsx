@@ -21,15 +21,17 @@ import {
   Sparkles,
   Clock,
   AlertTriangle,
+  Home,
 } from 'lucide-react';
 import { supabase, type Question, type QuestionType, type ResponseWithAnswers, type Team } from '@/lib/supabase';
+import CoachOverview from '@/components/CoachOverview';
 import PlayersView from '@/components/PlayersView';
 import WellbeingView from '@/components/WellbeingView';
 import SettingsView from '@/components/SettingsView';
 import SurveyAnalyticsView from '@/components/SurveyAnalyticsView';
 import AICoachView from '@/components/AICoachView';
 
-type Tab = 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'settings';
+type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'settings';
 
 interface AdminDashboardProps {
   team: Team;
@@ -37,13 +39,14 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) {
-  const [tab, setTab] = useState<Tab>('questions');
+  const [tab, setTab] = useState<Tab>('overview');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [responses, setResponses] = useState<ResponseWithAnswers[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedResponse, setSelectedResponse] = useState<ResponseWithAnswers | null>(null);
+  const [selectedWellbeingPlayer, setSelectedWellbeingPlayer] = useState<string | null>(null);
 
   const playerLink = `${window.location.origin}${window.location.pathname}#/player`;
 
@@ -195,11 +198,11 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
             <LogOut className="w-4 h-4" /> Logga ut
           </button>
         </div>
-        <p className="text-gray-500 ml-15 font-medium">Hantera frågor och se spelarnas svar</p>
+        <p className="text-gray-500 ml-15 font-medium">Följ lagets utveckling, återhämtning och aktuella status</p>
       </div>
 
       {/* Share link + codes card */}
-      <div className="mb-8 bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
+      {tab === 'settings' && <div className="mb-8 bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
         <div className="flex items-center gap-2 mb-1">
           <Shield className="w-4 h-4 text-gray-400" strokeWidth={2.5} />
           <h3 className="text-sm font-bold text-gray-700">Spelarlink & koder</h3>
@@ -273,10 +276,16 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
             );
           })()
         )}
-      </div>
+      </div>}
 
       {/* Tabs */}
       <div className="flex gap-1 sm:gap-2 mb-6 border-b-2 border-gray-100 overflow-x-auto">
+        <button
+          onClick={() => setTab('overview')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${tab === 'overview' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-700'}`}
+        >
+          <Home className="w-4 h-4" strokeWidth={2.5} /> Översikt
+        </button>
         <button
           onClick={() => setTab('questions')}
           className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
@@ -311,7 +320,7 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
           Spelare
         </button>
         <button
-          onClick={() => setTab('wellbeing')}
+          onClick={() => { setSelectedWellbeingPlayer(null); setTab('wellbeing'); }}
           className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
             tab === 'wellbeing'
               ? 'border-black text-black'
@@ -355,6 +364,8 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
           Inställningar
         </button>
       </div>
+
+      {tab === 'overview' && <CoachOverview teamId={team.id} onOpenPlayer={(playerId) => { setSelectedWellbeingPlayer(playerId); setTab('wellbeing'); }} />}
 
       {/* Questions tab */}
       {tab === 'questions' && (
@@ -434,7 +445,7 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
       {tab === 'players' && <PlayersView teamId={team.id} />}
 
       {/* Wellbeing tab */}
-      {tab === 'wellbeing' && <WellbeingView teamId={team.id} />}
+      {tab === 'wellbeing' && <WellbeingView teamId={team.id} initialPlayerId={selectedWellbeingPlayer} onBackToList={() => setSelectedWellbeingPlayer(null)} />}
 
       {/* Analytics tab */}
       {tab === 'analytics' && <SurveyAnalyticsView teamId={team.id} />}
