@@ -43,7 +43,7 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) {
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>('players');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [responses, setResponses] = useState<ResponseWithAnswers[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,34 +285,6 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
       {/* Tabs */}
       <div className="flex gap-1 sm:gap-2 mb-6 border-b-2 border-gray-100 overflow-x-auto">
         <button
-          onClick={() => setTab('overview')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${tab === 'overview' ? 'border-black text-black' : 'border-transparent text-gray-400 hover:text-gray-700'}`}
-        >
-          <Home className="w-4 h-4" strokeWidth={2.5} /> Översikt
-        </button>
-        <button
-          onClick={() => setTab('questions')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
-            tab === 'questions'
-              ? 'border-black text-black'
-              : 'border-transparent text-gray-400 hover:text-gray-700'
-          }`}
-        >
-          <ListChecks className="w-4 h-4" strokeWidth={2.5} />
-          Frågor ({questions.length})
-        </button>
-        <button
-          onClick={() => setTab('responses')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
-            tab === 'responses'
-              ? 'border-black text-black'
-              : 'border-transparent text-gray-400 hover:text-gray-700'
-          }`}
-        >
-          <Inbox className="w-4 h-4" strokeWidth={2.5} />
-          Svar ({responses.length})
-        </button>
-        <button
           onClick={() => setTab('players')}
           className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
             tab === 'players'
@@ -333,17 +305,6 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
         >
           <TrendingUp className="w-4 h-4" strokeWidth={2.5} />
           Välmående
-        </button>
-        <button
-          onClick={() => setTab('analytics')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
-            tab === 'analytics'
-              ? 'border-black text-black'
-              : 'border-transparent text-gray-400 hover:text-gray-700'
-          }`}
-        >
-          <BarChart3 className="w-4 h-4" strokeWidth={2.5} />
-          Analys
         </button>
         <button
           onClick={() => setTab('ai')}

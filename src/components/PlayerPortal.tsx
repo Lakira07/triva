@@ -231,7 +231,6 @@ export default function PlayerPortal() {
   // PLAYER WORKSPACE
   const surveyTarget = settings.weekly_survey_required;
   const surveyComplete = weeklySurveyCount >= surveyTarget;
-  const surveyPct = surveyTarget > 0 ? Math.min((weeklySurveyCount / surveyTarget) * 100, 100) : 100;
 
   const wbTarget = settings.weekly_wellbeing_required;
   const wbComplete = weeklyWellbeingCount >= wbTarget;
@@ -350,11 +349,7 @@ export default function PlayerPortal() {
                   <button onClick={() => setSection('status')} className="text-sm font-semibold text-[#315c43] hover:underline">Visa status</button>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <ProgressRing icon={<ListChecks className="w-5 h-5" />} label="Spelarenkät" done={Math.min(weeklySurveyCount, surveyTarget)} target={surveyTarget} pct={surveyPct} complete={surveyComplete} />
                   <ProgressRing icon={<Heart className="w-5 h-5" />} label="Välmående" done={Math.min(weeklyWellbeingCount, wbTarget)} target={wbTarget} pct={wbPct} complete={wbComplete} />
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <ActionCard onClick={() => setView('survey')} disabled={questions.length === 0} icon={<ListChecks className="w-6 h-6" />} title="Spelarenkät" subtitle={questions.length === 0 ? 'Inga frågor just nu' : surveyComplete ? 'Klar för denna vecka' : `${surveyTarget - weeklySurveyCount} inlämning(ar) kvar`} complete={surveyComplete && questions.length > 0} />
                   <ActionCard onClick={() => setView('wellbeing')} icon={<Heart className="w-6 h-6" />} title="Välmående" subtitle={wbComplete ? 'Klar för denna vecka' : `${wbTarget - weeklyWellbeingCount} rapport(er) kvar`} complete={wbComplete} />
                 </div>
               </section>
@@ -363,7 +358,16 @@ export default function PlayerPortal() {
         )}
 
         {section === 'iup' && <PlayerIUPSection playerId={player.id} teamId={team!.id} />}
-        {section === 'training' && <PlayerTrainingSection playerId={player.id} teamId={team!.id} />}
+        {section === 'training' && (
+          <PlayerTrainingSection
+            playerId={player.id}
+            teamId={team!.id}
+            hasSurveyQuestions={questions.length > 0}
+            surveyComplete={surveyComplete && questions.length > 0}
+            surveyRemaining={Math.max(surveyTarget - weeklySurveyCount, 0)}
+            onOpenSurvey={() => setView('survey')}
+          />
+        )}
         {section === 'status' && (
           <div className="max-w-3xl">
             <SectionHeading icon={<Heart className="w-5 h-5" />} eyebrow="Min status" title="Återhämtning börjar med en enkel check-in" description="Registrera sömn, energi, sinneslag, stress och stelhet. Det tar ungefär en minut." />
@@ -462,7 +466,21 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
 
 // --- PLAYER TRAINING SECTION ---
 
-function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId: string }) {
+function PlayerTrainingSection({
+  playerId,
+  teamId,
+  hasSurveyQuestions,
+  surveyComplete,
+  surveyRemaining,
+  onOpenSurvey,
+}: {
+  playerId: string;
+  teamId: string;
+  hasSurveyQuestions: boolean;
+  surveyComplete: boolean;
+  surveyRemaining: number;
+  onOpenSurvey: () => void;
+}) {
   const [allSessions, setAllSessions] = useState<TrainingSession[]>([]);
   const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
   const [completions, setCompletions] = useState<TrainingCompletion[]>([]);
@@ -500,6 +518,16 @@ function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId:
   return (
     <div className="max-w-3xl">
       <SectionHeading icon={<CalendarDays className="w-5 h-5" />} eyebrow="Träning & belastning" title="Träningen kopplas till dina mål" description="Planerade pass, genomförd tid, faktisk belastning och berörda utvecklingsområden visas här när tränaren har lagt upp träningsplanen." />
+      <div className="mt-5">
+        <ActionCard
+          onClick={onOpenSurvey}
+          disabled={!hasSurveyQuestions}
+          icon={<ListChecks className="w-6 h-6" />}
+          title="Spelarenkät"
+          subtitle={!hasSurveyQuestions ? 'Inga frågor just nu' : surveyComplete ? 'Klar för denna vecka' : `${surveyRemaining} inlämning(ar) kvar`}
+          complete={surveyComplete}
+        />
+      </div>
 
       {mySessions.length === 0 ? (
         <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
