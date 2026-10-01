@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Loader2,
   Sparkles,
@@ -15,8 +15,11 @@ import {
   ClipboardList,
   RefreshCw,
   User,
+  MessageCircle,
+  Send,
 } from 'lucide-react';
 import { supabase, type Player, type WellbeingEntry, type Question, type Answer, type Response } from '@/lib/supabase';
+import { streamChat, isAIConfigured, type ChatMessage } from '@/lib/ai';
 
 interface ResponseWithAnswers extends Response {
   answers: Answer[];
@@ -56,7 +59,7 @@ interface TeamAnalysis {
 export default function AICoachView({ teamId }: { teamId: string }) {
   const [analysis, setAnalysis] = useState<TeamAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<'overview' | 'lineup' | 'exercises' | 'players'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'lineup' | 'exercises' | 'players' | 'chat'>('overview');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -111,6 +114,7 @@ export default function AICoachView({ teamId }: { teamId: string }) {
           { key: 'lineup', label: 'Laguttagning', icon: Users },
           { key: 'exercises', label: 'Övningar', icon: Dumbbell },
           { key: 'players', label: 'Spelaranalys', icon: Brain },
+          { key: 'chat', label: 'AI-chatt', icon: MessageCircle },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -137,6 +141,7 @@ export default function AICoachView({ teamId }: { teamId: string }) {
       {activeSection === 'lineup' && <LineupSection analysis={analysis} />}
       {activeSection === 'exercises' && <ExercisesSection analysis={analysis} />}
       {activeSection === 'players' && <PlayersSection analysis={analysis} />}
+      {activeSection === 'chat' && <ChatSection analysis={analysis} />}
     </div>
   );
 }
@@ -744,6 +749,166 @@ function PlayersSection({ analysis }: { analysis: TeamAnalysis }) {
           </div>
         </button>
       ))}
+    </div>
+  );
+}
+
+function buildTeamContext(analysis: TeamAnalysis): string {
+  const playerSummaries = analysis.playerAnalyses.map((a) => {
+    const metrics: string[] = [];
+    if (a.avgSleep !== null) metrics.push(`sömn ${a.avgSleep.toFixed(1)}/5`);
+    if (a.avgEnergy !== null) metrics.push(`energi ${a.avgEnergy.toFixed(1)}/5`);
+    if (a.avgMood !== null) metrics.push(`sinne ${a.avgMood.toFixed(1)}/5`);
+    if (a.avgStress !== null) metrics.push(`stress ${a.avgStress.toFixed(1)}/5`);
+    if (a.avgSoreness !== null) metrics.push(`stelhet ${a.avgSoreness.toFixed(1)}/5`);
+    return `- ${a.player.name}${a.player.position ? ` (${a.player.position})` : ''}: ${metrics.join(', ') || 'ingen data'} — risk: ${a.riskLevel}${a.riskFactors.length > 0 ? `, riskfaktorer: ${a.riskFactors.join(', ')}` : ''}`;
+  }).join('\n');
+
+  return `Du är en AI-assistent för en fotbollstränare. Här är lagets aktuella data:
+
+Lagets snittvälmående: ${analysis.teamAvgWellbeing !== null ? analysis.teamAvgWellbeing.toFixed(1) + '/5' : 'ingen data'}
+Lagets risknivå: ${analysis.teamRiskLevel}
+
+Spelare:
+${playerSummaries}
+
+Lagets rekommendationer:
+${analysis.teamRecommendations.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+Svara på svenska. Var konkret och använd datan ovan för att ge råd.`;
+}
+
+function ChatSection({ analysis }: { analysis: TeamAnalysis }) {
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const [input, setInput] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  const send = async () => {
+    if (!input.trim() || streaming) return;
+    const userMsg = input.trim();
+    setInput('');
+    setError(null);
+    setStreaming(true);
+
+    const newMessages = [...messages, { role: 'user' as const, content: userMsg }];
+    setMessages(newMessages);
+
+    const systemContext = buildTeamContext(analysis);
+    const chatMessages: ChatMessage[] = [
+      { role: 'system', content: systemContext },
+      ...newMessages.map((m) => ({ role: m.role, content: m.content })),
+    ];
+
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+    try {
+      let assistantContent = '';
+      for await (const chunk of streamChat(chatMessages)) {
+        assistantContent += chunk;
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: 'assistant', content: assistantContent };
+          return updated;
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunde inte få svar från AI:n');
+      setMessages((prev) => prev.filter((_, i) => i !== prev.length - 1));
+    } finally {
+      setStreaming(false);
+    }
+  };
+
+  if (!isAIConfigured()) {
+    return (
+      <div className="bg-white rounded-3xl border border-gray-200 p-8 shadow-card text-center">
+        <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" strokeWidth={2} />
+        <p className="font-bold text-gray-700 mb-1">AI-chatt inte konfigurerad</p>
+        <p className="text-sm text-gray-500">Lägg till VITE_OPENROUTER_API_KEY i .env-filen för att aktivera AI-chatten.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-200 shadow-card flex flex-col" style={{ height: '70vh' }}>
+      <div className="flex items-center gap-2 p-4 border-b border-gray-100">
+        <MessageCircle className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
+        <h3 className="font-bold text-black text-heading">AI-tränarassistent</h3>
+        <span className="text-xs text-gray-400 font-medium ml-1">— ställ frågor om ditt lag</span>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-center py-12">
+            <Sparkles className="w-10 h-10 text-gray-200 mx-auto mb-3" strokeWidth={2} />
+            <p className="text-sm text-gray-400 font-medium">Fråga AI:n om ditt lag — till exempel:</p>
+            <div className="mt-4 flex flex-col gap-2 items-center">
+              {[
+                'Vilka spelare bör jag vila nästa match?',
+                'Hur ska jag lägga upp nästa träningspass?',
+                'Vilken laguttagning rekommenderar du?',
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setInput(suggestion)}
+                  className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl font-medium transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              msg.role === 'user'
+                ? 'bg-black text-white font-medium'
+                : 'bg-gray-100 text-gray-800'
+            }`}>
+              {msg.content || (streaming && i === messages.length - 1 ? (
+                <span className="inline-flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+              ) : null)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <div className="px-4 pb-2">
+          <p className="text-xs text-red-600 font-medium">{error}</p>
+        </div>
+      )}
+
+      <div className="p-4 border-t border-gray-100 flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
+          placeholder="Skriv en fråga..."
+          disabled={streaming}
+          className="flex-1 bg-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-black/10 disabled:opacity-50"
+        />
+        <button
+          onClick={send}
+          disabled={streaming || !input.trim()}
+          className="w-10 h-10 flex-shrink-0 bg-black text-white rounded-xl flex items-center justify-center hover:bg-gray-800 disabled:opacity-40 transition-colors"
+        >
+          {streaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+        </button>
+      </div>
     </div>
   );
 }
