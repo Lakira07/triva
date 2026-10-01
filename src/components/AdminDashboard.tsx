@@ -22,6 +22,8 @@ import {
   Clock,
   AlertTriangle,
   Home,
+  Dumbbell,
+  Target,
 } from 'lucide-react';
 import { supabase, type Question, type QuestionType, type ResponseWithAnswers, type Team } from '@/lib/supabase';
 import CoachOverview from '@/components/CoachOverview';
@@ -30,8 +32,10 @@ import WellbeingView from '@/components/WellbeingView';
 import SettingsView from '@/components/SettingsView';
 import SurveyAnalyticsView from '@/components/SurveyAnalyticsView';
 import AICoachView from '@/components/AICoachView';
+import TrainingView from '@/components/TrainingView';
+import PlayerDevelopmentView from '@/components/PlayerDevelopmentView';
 
-type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'settings';
+type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'training' | 'development' | 'settings';
 
 interface AdminDashboardProps {
   team: Team;
@@ -353,6 +357,28 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
           AI-coach
         </button>
         <button
+          onClick={() => setTab('training')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
+            tab === 'training'
+              ? 'border-black text-black'
+              : 'border-transparent text-gray-400 hover:text-gray-700'
+          }`}
+        >
+          <Dumbbell className="w-4 h-4" strokeWidth={2.5} />
+          Träning
+        </button>
+        <button
+          onClick={() => setTab('development')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
+            tab === 'development'
+              ? 'border-black text-black'
+              : 'border-transparent text-gray-400 hover:text-gray-700'
+          }`}
+        >
+          <Target className="w-4 h-4" strokeWidth={2.5} />
+          Utveckling
+        </button>
+        <button
           onClick={() => setTab('settings')}
           className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
             tab === 'settings'
@@ -452,6 +478,12 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
 
       {/* AI Coach tab */}
       {tab === 'ai' && <AICoachView teamId={team.id} />}
+
+      {/* Training tab */}
+      {tab === 'training' && <TrainingView teamId={team.id} />}
+
+      {/* Development tab */}
+      {tab === 'development' && <PlayerDevelopmentView teamId={team.id} />}
 
       {/* Settings tab */}
       {tab === 'settings' && <SettingsView teamId={team.id} />}

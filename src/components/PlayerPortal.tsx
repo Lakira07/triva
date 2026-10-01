@@ -21,7 +21,7 @@ import {
   CalendarDays,
   BarChart3,
 } from 'lucide-react';
-import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, WELLBEING_METRICS } from '@/lib/supabase';
+import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type DevelopmentArea, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -362,8 +362,8 @@ export default function PlayerPortal() {
           </>
         )}
 
-        {section === 'iup' && <EmptyPlanningSection icon={<Target className="w-6 h-6" />} eyebrow="Min IUP" title="Din personliga utvecklingskarta" description="Här samlas karriärmål, utvecklingsområden och konkreta fotbollsaktioner. Be tränaren lägga in din plan så kan ni följa arbetet tillsammans." />}
-        {section === 'training' && <EmptyPlanningSection icon={<CalendarDays className="w-6 h-6" />} eyebrow="Träning & belastning" title="Träningen kopplas till dina mål" description="Planerade pass, genomförd tid, faktisk belastning och berörda utvecklingsområden visas här när tränaren har lagt upp träningsplanen." />}
+        {section === 'iup' && <PlayerIUPSection playerId={player.id} teamId={team!.id} />}
+        {section === 'training' && <PlayerTrainingSection playerId={player.id} teamId={team!.id} />}
         {section === 'status' && (
           <div className="max-w-3xl">
             <SectionHeading icon={<Heart className="w-5 h-5" />} eyebrow="Min status" title="Återhämtning börjar med en enkel check-in" description="Registrera sömn, energi, sinneslag, stress och stelhet. Det tar ungefär en minut." />
@@ -382,25 +382,255 @@ export default function PlayerPortal() {
             </div>
           </div>
         )}
-        {section === 'development' && (
-          <div className="max-w-3xl">
-            <SectionHeading icon={<BarChart3 className="w-5 h-5" />} eyebrow="Utveckling" title="Följ arbetet över tid" description="Mål, träningsinsatser, återhämtning och reflektion hör ihop. Din utvecklingsbild blir komplett när IUP och träning finns upplagda." />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {['Teknik', 'Spelförståelse', 'Fysik', 'Psykologi'].map((area) => (
-                <div key={area} className="rounded-xl border border-gray-200 bg-white p-5">
-                  <p className="font-bold text-gray-900">{area}</p><p className="mt-2 text-sm text-gray-500">Ingen bedömning registrerad ännu</p>
-                  <div className="mt-4 h-1.5 rounded-full bg-gray-100" />
-                </div>
-              ))}
+        {section === 'development' && <PlayerDevelopmentSection playerId={player.id} recentWellbeing={recentWellbeing} />}
+      </main>
+    </div>
+  );
+}
+
+// --- PLAYER IUP SECTION ---
+
+function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: string }) {
+  const [goals, setGoals] = useState<DevelopmentGoal[]>([]);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: gData }, { data: aData }] = await Promise.all([
+        supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+        supabase.from('assessments').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+      ]);
+      setGoals((gData || []) as DevelopmentGoal[]);
+      setAssessments((aData || []) as Assessment[]);
+      setLoading(false);
+    })();
+  }, [playerId]);
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
+
+  const areas: DevelopmentArea[] = ['teknik', 'spelförståelse', 'fysik', 'psykologi'];
+
+  return (
+    <div className="max-w-3xl">
+      <SectionHeading icon={<Target className="w-5 h-5" />} eyebrow="Min IUP" title="Din personliga utvecklingskarta" description="Här samlas karriärmål, utvecklingsområden och konkreta fotbollsaktioner. Be tränaren lägga in din plan så kan ni följa arbetet tillsammans." />
+      {goals.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
+          <p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p>
+          <p className="mt-1 text-sm leading-6 text-gray-500">När tränaren lägger in dina mål visas de här tillsammans med bedömningar och framsteg.</p>
+        </div>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {areas.map((area) => {
+            const areaGoals = goals.filter((g) => g.area === area);
+            const areaAssessments = assessments.filter((a) => a.area === area);
+            if (areaGoals.length === 0 && areaAssessments.length === 0) return null;
+            return (
+              <div key={area} className="rounded-xl border border-gray-200 bg-white p-5">
+                <p className="font-bold text-gray-900">{AREA_LABELS[area]}</p>
+                {areaGoals.map((g) => (
+                  <div key={g.id} className="mt-3 border-l-2 border-[#315c43] pl-3">
+                    <p className="text-sm font-semibold text-gray-800">{g.target_description}</p>
+                    {g.football_action && <p className="text-xs text-gray-500 mt-0.5">Fotbollsaktion: {g.football_action}</p>}
+                    <span className={`inline-block text-xs px-2 py-0.5 rounded-md mt-1.5 font-bold ${g.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{g.is_active ? 'Aktivt' : 'Avslutat'}</span>
+                  </div>
+                ))}
+                {areaAssessments.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {areaAssessments.map((a) => (
+                      <div key={a.id} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-[#234633] text-white flex items-center justify-center text-xs font-bold">{a.assessment_number}</span>
+                          <span className="text-xs text-gray-400">{new Date(a.created_at).toLocaleDateString('sv-SE')}</span>
+                          {a.coach_rating && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md font-bold">Betyg: {a.coach_rating}/5</span>}
+                        </div>
+                        {a.coach_observation && <p className="text-sm text-gray-600 mt-1.5"><span className="font-bold text-gray-700">Observation:</span> {a.coach_observation}</p>}
+                        {a.feedback && <p className="text-sm text-gray-600 mt-1"><span className="font-bold text-gray-700">Feedback:</span> {a.feedback}</p>}
+                        {a.next_steps && <p className="text-sm text-gray-600 mt-1"><span className="font-bold text-gray-700">Nästa steg:</span> {a.next_steps}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- PLAYER TRAINING SECTION ---
+
+function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId: string }) {
+  const [sessions, setSessions] = useState<TrainingSession[]>([]);
+  const [completions, setCompletions] = useState<TrainingCompletion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: sData }, { data: cData }] = await Promise.all([
+        supabase.from('training_sessions').select('*').eq('team_id', teamId).order('scheduled_at', { ascending: false }),
+        supabase.from('training_completions').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+      ]);
+      setSessions((sData || []) as TrainingSession[]);
+      setCompletions((cData || []) as TrainingCompletion[]);
+      setLoading(false);
+    })();
+  }, [playerId, teamId]);
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
+
+  const playerSessionIds = new Set(completions.map((c) => c.session_id));
+  const mySessions = sessions.filter((s) => playerSessionIds.has(s.id));
+  const totalActualMin = completions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
+  const totalActualLoad = completions.reduce((sum, c) => sum + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0);
+  const totalPlannedLoad = mySessions.reduce((sum, s) => sum + s.planned_duration_min * s.planned_rpe, 0);
+  const painCount = completions.filter((c) => c.has_pain).length;
+  const avgRpe = completions.filter((c) => c.player_rpe).length > 0
+    ? completions.filter((c) => c.player_rpe).reduce((sum, c) => sum + (c.player_rpe ?? 0), 0) / completions.filter((c) => c.player_rpe).length
+    : null;
+
+  return (
+    <div className="max-w-3xl">
+      <SectionHeading icon={<CalendarDays className="w-5 h-5" />} eyebrow="Träning & belastning" title="Träningen kopplas till dina mål" description="Planerade pass, genomförd tid, faktisk belastning och berörda utvecklingsområden visas här när tränaren har lagt upp träningsplanen." />
+
+      {mySessions.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
+          <p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p>
+          <p className="mt-1 text-sm leading-6 text-gray-500">När innehållet är på plats visas det här tillsammans med din utvecklingshistorik.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+              <p className="text-2xl font-extrabold text-gray-950">{totalActualMin}</p>
+              <p className="text-xs text-gray-400 mt-0.5">min träning</p>
             </div>
-            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-              <div className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-[#315c43]" /><h3 className="font-bold text-gray-900">Återhämtning</h3></div>
-              <p className="mt-2 text-sm text-gray-500">{recentWellbeing.length ? `${recentWellbeing.length} statusrapport(er) finns registrerade.` : 'Statushistorik visas när du har registrerat din första check-in.'}</p>
-              {recentWellbeing.length > 0 && <div className="mt-4 space-y-3">{(['sleep', 'energy', 'stress', 'soreness'] as const).map((key) => <MetricTrend key={key} label={WELLBEING_METRICS.find((metric) => metric.key === key)!.label} entries={recentWellbeing} metric={key} />)}</div>}
+            <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+              <p className="text-2xl font-extrabold text-gray-950">{totalActualLoad}</p>
+              <p className="text-xs text-gray-400 mt-0.5">AU faktisk belastning</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+              <p className="text-2xl font-extrabold text-gray-950">{mySessions.length}</p>
+              <p className="text-xs text-gray-400 mt-0.5">pass genomförda</p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${painCount > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
+              <p className={`text-2xl font-extrabold ${painCount > 0 ? 'text-red-600' : 'text-gray-950'}`}>{painCount}</p>
+              <p className="text-xs text-gray-400 mt-0.5">känningar</p>
             </div>
           </div>
-        )}
-      </main>
+          {avgRpe !== null && (
+            <p className="text-xs text-gray-400 mt-2 text-center">Snitt RPE: <span className="font-bold text-gray-700">{avgRpe.toFixed(1)}</span> · Planerad belastning: <span className="font-bold text-gray-700">{totalPlannedLoad} AU</span></p>
+          )}
+
+          <div className="mt-5 space-y-3">
+            {mySessions.map((s) => {
+              const comp = completions.find((c) => c.session_id === s.id);
+              const actualLoad = comp?.actual_duration_min && comp?.player_rpe ? comp.actual_duration_min * comp.player_rpe : null;
+              const plannedLoad = s.planned_duration_min * s.planned_rpe;
+              return (
+                <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900">{s.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {new Date(s.scheduled_at).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })} · {SESSION_TYPE_LABELS[s.session_type]}
+                      </p>
+                      {s.purpose && <p className="text-sm text-gray-500 mt-1.5">{s.purpose}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {actualLoad !== null && <p className="text-sm font-bold text-gray-900">{actualLoad} AU</p>}
+                      <p className="text-xs text-gray-400">plan: {plannedLoad} AU</p>
+                    </div>
+                  </div>
+                  {comp && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">Faktisk tid:</span> <span className="font-bold text-gray-700">{comp.actual_duration_min ?? '—'} min</span></div>
+                      <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">RPE:</span> <span className="font-bold text-gray-700">{comp.player_rpe ?? '—'}</span></div>
+                    </div>
+                  )}
+                  {comp?.has_pain && (
+                    <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      <p className="text-xs font-bold text-red-600">Känning/smärta: {comp.pain_note || 'Ingen beskrivning'}</p>
+                    </div>
+                  )}
+                  {comp?.player_reflection && (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mt-2">{comp.player_reflection}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// --- PLAYER DEVELOPMENT SECTION ---
+
+function PlayerDevelopmentSection({ playerId, recentWellbeing }: { playerId: string; recentWellbeing: WellbeingEntry[] }) {
+  const [goals, setGoals] = useState<DevelopmentGoal[]>([]);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: gData }, { data: aData }] = await Promise.all([
+        supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+        supabase.from('assessments').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+      ]);
+      setGoals((gData || []) as DevelopmentGoal[]);
+      setAssessments((aData || []) as Assessment[]);
+      setLoading(false);
+    })();
+  }, [playerId]);
+
+  if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
+
+  const areas: DevelopmentArea[] = ['teknik', 'spelförståelse', 'fysik', 'psykologi'];
+
+  return (
+    <div className="max-w-3xl">
+      <SectionHeading icon={<BarChart3 className="w-5 h-5" />} eyebrow="Utveckling" title="Följ arbetet över tid" description="Mål, träningsinsatser, återhämtning och reflektion hör ihop. Din utvecklingsbild blir komplett när IUP och träning finns upplagda." />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {areas.map((area) => {
+          const areaGoals = goals.filter((g) => g.area === area);
+          const areaAssessments = assessments.filter((a) => a.area === area);
+          const latest = areaAssessments[0];
+          const hasData = areaGoals.length > 0 || areaAssessments.length > 0;
+          return (
+            <div key={area} className="rounded-xl border border-gray-200 bg-white p-5">
+              <p className="font-bold text-gray-900">{AREA_LABELS[area]}</p>
+              {!hasData ? (
+                <>
+                  <p className="mt-2 text-sm text-gray-500">Ingen bedömning registrerad ännu</p>
+                  <div className="mt-4 h-1.5 rounded-full bg-gray-100" />
+                </>
+              ) : (
+                <>
+                  {latest?.coach_rating && (
+                    <>
+                      <p className="mt-2 text-sm text-gray-500">Senaste betyg: <span className="font-bold text-gray-800">{latest.coach_rating}/5</span></p>
+                      <div className="mt-3 h-1.5 rounded-full bg-gray-100">
+                        <div className="h-1.5 rounded-full bg-[#315c43]" style={{ width: `${(latest.coach_rating / 5) * 100}%` }} />
+                      </div>
+                    </>
+                  )}
+                  {latest?.next_steps && <p className="mt-3 text-xs text-gray-500"><span className="font-bold">Nästa steg:</span> {latest.next_steps}</p>}
+                  <p className="mt-2 text-xs text-gray-400">{areaAssessments.length} bedömning(ar) · {areaGoals.length} mål</p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-[#315c43]" /><h3 className="font-bold text-gray-900">Återhämtning</h3></div>
+        <p className="mt-2 text-sm text-gray-500">{recentWellbeing.length ? `${recentWellbeing.length} statusrapport(er) finns registrerade.` : 'Statushistorik visas när du har registrerat din första check-in.'}</p>
+        {recentWellbeing.length > 0 && <div className="mt-4 space-y-3">{(['sleep', 'energy', 'stress', 'soreness'] as const).map((key) => <MetricTrend key={key} label={WELLBEING_METRICS.find((metric) => metric.key === key)!.label} entries={recentWellbeing} metric={key} />)}</div>}
+      </div>
     </div>
   );
 }

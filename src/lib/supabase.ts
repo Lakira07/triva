@@ -86,3 +86,98 @@ export interface AppSettings {
   weekly_survey_required: number;
   weekly_wellbeing_required: number;
 }
+
+export type DevelopmentArea = 'teknik' | 'spelförståelse' | 'fysik' | 'psykologi';
+
+export const AREA_LABELS: Record<DevelopmentArea, string> = {
+  teknik: 'Teknik',
+  spelförståelse: 'Spelförståelse',
+  fysik: 'Fysik',
+  psykologi: 'Psykologi',
+};
+
+export const AREA_ICONS: Record<DevelopmentArea, string> = {
+  teknik: 'BallFootball',
+  spelförståelse: 'Brain',
+  fysik: 'Dumbbell',
+  psykologi: 'Heart',
+};
+
+export interface DevelopmentGoal {
+  id: string;
+  player_id: string;
+  team_id: string;
+  area: DevelopmentArea;
+  football_action: string | null;
+  target_description: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SessionType = 'lag' | 'grupp' | 'individuell';
+
+export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
+  lag: 'Lagträning',
+  grupp: 'Gruppträning',
+  individuell: 'Individuell',
+};
+
+export interface TrainingSession {
+  id: string;
+  team_id: string;
+  title: string;
+  session_type: SessionType;
+  scheduled_at: string;
+  planned_duration_min: number;
+  planned_rpe: number;
+  content: string | null;
+  purpose: string | null;
+  exercises: string | null;
+  goal_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingAssignment {
+  id: string;
+  session_id: string;
+  player_id: string | null;
+  is_all_team: boolean;
+  created_at: string;
+}
+
+export interface TrainingCompletion {
+  id: string;
+  session_id: string;
+  player_id: string;
+  team_id: string;
+  actual_duration_min: number | null;
+  player_rpe: number | null;
+  has_pain: boolean;
+  pain_note: string | null;
+  player_reflection: string | null;
+  completed_at: string;
+  created_at: string;
+}
+
+export interface Assessment {
+  id: string;
+  player_id: string;
+  team_id: string;
+  goal_id: string | null;
+  area: DevelopmentArea;
+  assessment_number: number;
+  football_action: string | null;
+  physical_quality: string | null;
+  psychological_focus: string | null;
+  coach_observation: string | null;
+  coach_rating: number | null;
+  player_reflection: string | null;
+  training_done_summary: string | null;
+  load_recovery_summary: string | null;
+  feedback: string | null;
+  next_steps: string | null;
+  created_at: string;
+  updated_at: string;
+}
