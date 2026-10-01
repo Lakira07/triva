@@ -21,7 +21,7 @@ import {
   CalendarDays,
   BarChart3,
 } from 'lucide-react';
-import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type DevelopmentArea, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
+import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type TrainingAssignment, type DevelopmentArea, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -463,17 +463,20 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
 // --- PLAYER TRAINING SECTION ---
 
 function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId: string }) {
-  const [sessions, setSessions] = useState<TrainingSession[]>([]);
+  const [allSessions, setAllSessions] = useState<TrainingSession[]>([]);
+  const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
   const [completions, setCompletions] = useState<TrainingCompletion[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [{ data: sData }, { data: cData }] = await Promise.all([
+      const [{ data: sData }, { data: aData }, { data: cData }] = await Promise.all([
         supabase.from('training_sessions').select('*').eq('team_id', teamId).order('scheduled_at', { ascending: false }),
+        supabase.from('training_assignments').select('*').or(`player_id.eq.${playerId},is_all_team.eq.true`),
         supabase.from('training_completions').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
       ]);
-      setSessions((sData || []) as TrainingSession[]);
+      setAllSessions((sData || []) as TrainingSession[]);
+      setAssignments((aData || []) as TrainingAssignment[]);
       setCompletions((cData || []) as TrainingCompletion[]);
       setLoading(false);
     })();
@@ -481,8 +484,11 @@ function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId:
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
 
-  const playerSessionIds = new Set(completions.map((c) => c.session_id));
-  const mySessions = sessions.filter((s) => playerSessionIds.has(s.id));
+  const assignedSessionIds = new Set(assignments.map((a) => a.session_id));
+  const mySessions = allSessions.filter((s) => assignedSessionIds.has(s.id));
+  const completedSessionIds = new Set(completions.map((c) => c.session_id));
+  const completedSessions = mySessions.filter((s) => completedSessionIds.has(s.id));
+  const upcomingSessions = mySessions.filter((s) => !completedSessionIds.has(s.id));
   const totalActualMin = completions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
   const totalActualLoad = completions.reduce((sum, c) => sum + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0);
   const totalPlannedLoad = mySessions.reduce((sum, s) => sum + s.planned_duration_min * s.planned_rpe, 0);
@@ -497,22 +503,22 @@ function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId:
 
       {mySessions.length === 0 ? (
         <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
-          <p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p>
-          <p className="mt-1 text-sm leading-6 text-gray-500">När innehållet är på plats visas det här tillsammans med din utvecklingshistorik.</p>
+          <p className="text-sm font-semibold text-gray-700">Inga träningspass tilldelade ännu</p>
+          <p className="mt-1 text-sm leading-6 text-gray-500">När tränaren lägger upp träningsplanen visas dina pass här.</p>
         </div>
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
               <p className="text-2xl font-extrabold text-gray-950">{totalActualMin}</p>
-              <p className="text-xs text-gray-400 mt-0.5">min träning</p>
+              <p className="text-xs text-gray-400 mt-0.5">min genomförd</p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
               <p className="text-2xl font-extrabold text-gray-950">{totalActualLoad}</p>
               <p className="text-xs text-gray-400 mt-0.5">AU faktisk belastning</p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
-              <p className="text-2xl font-extrabold text-gray-950">{mySessions.length}</p>
+              <p className="text-2xl font-extrabold text-gray-950">{completedSessions.length}/{mySessions.length}</p>
               <p className="text-xs text-gray-400 mt-0.5">pass genomförda</p>
             </div>
             <div className={`rounded-xl border p-4 text-center ${painCount > 0 ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
@@ -524,44 +530,84 @@ function PlayerTrainingSection({ playerId, teamId }: { playerId: string; teamId:
             <p className="text-xs text-gray-400 mt-2 text-center">Snitt RPE: <span className="font-bold text-gray-700">{avgRpe.toFixed(1)}</span> · Planerad belastning: <span className="font-bold text-gray-700">{totalPlannedLoad} AU</span></p>
           )}
 
-          <div className="mt-5 space-y-3">
-            {mySessions.map((s) => {
-              const comp = completions.find((c) => c.session_id === s.id);
-              const actualLoad = comp?.actual_duration_min && comp?.player_rpe ? comp.actual_duration_min * comp.player_rpe : null;
-              const plannedLoad = s.planned_duration_min * s.planned_rpe;
-              return (
-                <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-gray-900">{s.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {new Date(s.scheduled_at).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })} · {SESSION_TYPE_LABELS[s.session_type]}
-                      </p>
-                      {s.purpose && <p className="text-sm text-gray-500 mt-1.5">{s.purpose}</p>}
+          {upcomingSessions.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-3">Planerade pass</h3>
+              <div className="space-y-3">
+                {upcomingSessions.map((s) => {
+                  const plannedLoad = s.planned_duration_min * s.planned_rpe;
+                  return (
+                    <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            <p className="font-bold text-gray-900">{s.title}</p>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(s.scheduled_at).toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'long' })} kl {new Date(s.scheduled_at).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} · {SESSION_TYPE_LABELS[s.session_type]}
+                          </p>
+                          {s.purpose && <p className="text-sm text-gray-500 mt-1.5">{s.purpose}</p>}
+                          {s.content && <p className="text-xs text-gray-400 mt-1">{s.content}</p>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-bold text-gray-900">{plannedLoad} AU</p>
+                          <p className="text-xs text-gray-400">{s.planned_duration_min} min · RPE {s.planned_rpe}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      {actualLoad !== null && <p className="text-sm font-bold text-gray-900">{actualLoad} AU</p>}
-                      <p className="text-xs text-gray-400">plan: {plannedLoad} AU</p>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {completedSessions.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-3">Genomförda pass</h3>
+              <div className="space-y-3">
+                {completedSessions.map((s) => {
+                  const comp = completions.find((c) => c.session_id === s.id);
+                  const actualLoad = comp?.actual_duration_min && comp?.player_rpe ? comp.actual_duration_min * comp.player_rpe : null;
+                  const plannedLoad = s.planned_duration_min * s.planned_rpe;
+                  return (
+                    <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-green-500" />
+                            <p className="font-bold text-gray-900">{s.title}</p>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(s.scheduled_at).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })} · {SESSION_TYPE_LABELS[s.session_type]}
+                          </p>
+                          {s.purpose && <p className="text-sm text-gray-500 mt-1.5">{s.purpose}</p>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          {actualLoad !== null && <p className="text-sm font-bold text-gray-900">{actualLoad} AU</p>}
+                          <p className="text-xs text-gray-400">plan: {plannedLoad} AU</p>
+                        </div>
+                      </div>
+                      {comp && (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">Faktisk tid:</span> <span className="font-bold text-gray-700">{comp.actual_duration_min ?? '—'} min</span></div>
+                          <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">RPE:</span> <span className="font-bold text-gray-700">{comp.player_rpe ?? '—'}</span></div>
+                        </div>
+                      )}
+                      {comp?.has_pain && (
+                        <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                          <p className="text-xs font-bold text-red-600">Känning/smärta: {comp.pain_note || 'Ingen beskrivning'}</p>
+                        </div>
+                      )}
+                      {comp?.player_reflection && (
+                        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mt-2">{comp.player_reflection}</p>
+                      )}
                     </div>
-                  </div>
-                  {comp && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">Faktisk tid:</span> <span className="font-bold text-gray-700">{comp.actual_duration_min ?? '—'} min</span></div>
-                      <div className="bg-gray-50 rounded-lg px-3 py-2"><span className="text-gray-400">RPE:</span> <span className="font-bold text-gray-700">{comp.player_rpe ?? '—'}</span></div>
-                    </div>
-                  )}
-                  {comp?.has_pain && (
-                    <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                      <p className="text-xs font-bold text-red-600">Känning/smärta: {comp.pain_note || 'Ingen beskrivning'}</p>
-                    </div>
-                  )}
-                  {comp?.player_reflection && (
-                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mt-2">{comp.player_reflection}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
