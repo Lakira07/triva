@@ -485,6 +485,17 @@ function PlayerTrainingSection({
   const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
   const [completions, setCompletions] = useState<TrainingCompletion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [completingSessionId, setCompletingSessionId] = useState<string | null>(null);
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
+
+  const refetchCompletions = async () => {
+    const { data: cData } = await supabase
+      .from('training_completions')
+      .select('*')
+      .eq('player_id', playerId)
+      .order('created_at', { ascending: false });
+    setCompletions((cData || []) as TrainingCompletion[]);
+  };
 
   useEffect(() => {
     (async () => {
@@ -564,6 +575,8 @@ function PlayerTrainingSection({
               <div className="space-y-3">
                 {upcomingSessions.map((s) => {
                   const plannedLoad = s.planned_duration_min * s.planned_rpe;
+                  const isCompleting = completingSessionId === s.id;
+                  const justSaved = savedSessionId === s.id;
                   return (
                     <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
                       <div className="flex items-start justify-between gap-3">
@@ -583,6 +596,33 @@ function PlayerTrainingSection({
                           <p className="text-xs text-gray-400">{s.planned_duration_min} min · RPE {s.planned_rpe}</p>
                         </div>
                       </div>
+
+                      {justSaved ? (
+                        <div className="mt-4 flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                          <p className="text-sm font-bold text-green-700">Sparat! Din rapport har skickats till tränaren.</p>
+                        </div>
+                      ) : isCompleting ? (
+                        <CompletionForm
+                          session={s}
+                          playerId={playerId}
+                          teamId={teamId}
+                          onCancel={() => setCompletingSessionId(null)}
+                          onSaved={async () => {
+                            await refetchCompletions();
+                            setCompletingSessionId(null);
+                            setSavedSessionId(s.id);
+                            setTimeout(() => setSavedSessionId(null), 4000);
+                          }}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setCompletingSessionId(s.id)}
+                          className="mt-3 w-full rounded-lg bg-[#234633] py-2.5 text-sm font-bold text-white hover:bg-[#183525] transition-colors"
+                        >
+                          Fyll i genomförande
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -715,6 +755,168 @@ function SectionHeading({ icon, eyebrow, title, description }: { icon: React.Rea
 
 function EmptyPlanningSection({ icon, eyebrow, title, description }: { icon: React.ReactNode; eyebrow: string; title: string; description: string }) {
   return <div className="max-w-3xl"><SectionHeading icon={icon} eyebrow={eyebrow} title={title} description={description} /><div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8"><p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p><p className="mt-1 text-sm leading-6 text-gray-500">När innehållet är på plats visas det här tillsammans med din utvecklingshistorik.</p></div></div>;
+}
+
+function CompletionForm({
+  session,
+  playerId,
+  teamId,
+  onCancel,
+  onSaved,
+}: {
+  session: TrainingSession;
+  playerId: string;
+  teamId: string;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [actualMin, setActualMin] = useState<string>(String(session.planned_duration_min));
+  const [rpe, setRpe] = useState<number>(session.planned_rpe);
+  const [hasPain, setHasPain] = useState(false);
+  const [painNote, setPainNote] = useState('');
+  const [reflection, setReflection] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setError(null);
+
+    const minVal = parseInt(actualMin, 10);
+    if (isNaN(minVal) || minVal < 0) {
+      setError('Fyll i giltig tid i minuter.');
+      setSaving(false);
+      return;
+    }
+
+    const { error: insertError } = await supabase.from('training_completions').insert({
+      session_id: session.id,
+      player_id: playerId,
+      team_id: teamId,
+      actual_duration_min: minVal,
+      player_rpe: rpe,
+      has_pain: hasPain,
+      pain_note: hasPain ? painNote.trim() || null : null,
+      player_reflection: reflection.trim() || null,
+      completed_at: new Date().toISOString(),
+    });
+
+    if (insertError) {
+      setError('Kunde inte spara. Försök igen.');
+      setSaving(false);
+      return;
+    }
+
+    setSaving(false);
+    onSaved();
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <p className="text-sm font-bold text-gray-900 mb-3">Hur gick det, {session.title}?</p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-bold text-gray-500">Faktisk tid (min)</label>
+          <input
+            type="number"
+            min={0}
+            value={actualMin}
+            onChange={(e) => setActualMin(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-800 focus:border-[#315c43] focus:outline-none focus:ring-1 focus:ring-[#315c43]"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-gray-500">Spelarens RPE (1–10)</label>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={rpe}
+              onChange={(e) => setRpe(Number(e.target.value))}
+              className="flex-1 accent-[#315c43]"
+            />
+            <span className="w-10 text-center rounded-lg bg-white border border-gray-200 py-1 text-sm font-extrabold text-gray-900">{rpe}</span>
+          </div>
+          <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+            <span>Vila</span><span>Måttlig</span><span>Max</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-gray-500">Känning/smärta?</label>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setHasPain(false)}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold transition-colors ${!hasPain ? 'bg-[#234633] text-white' : 'bg-white border border-gray-200 text-gray-500'}`}
+            >
+              Nej
+            </button>
+            <button
+              type="button"
+              onClick={() => setHasPain(true)}
+              className={`flex-1 rounded-lg py-2 text-sm font-bold transition-colors ${hasPain ? 'bg-red-600 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}
+            >
+              Ja
+            </button>
+          </div>
+          {hasPain && (
+            <input
+              type="text"
+              placeholder="Beskriv var och hur"
+              value={painNote}
+              onChange={(e) => setPainNote(e.target.value)}
+              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+            />
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-gray-500">Reflektion (frivilligt)</label>
+          <textarea
+            rows={2}
+            placeholder="Hur kändes passet?"
+            value={reflection}
+            onChange={(e) => setReflection(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-[#315c43] focus:outline-none focus:ring-1 focus:ring-[#315c43] resize-none"
+          />
+        </div>
+
+        {error && <p className="text-xs font-bold text-red-600">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50 transition-colors"
+          >
+            Avbryt
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            className="flex-[2] rounded-lg bg-[#234633] py-2.5 text-sm font-bold text-white hover:bg-[#183525] disabled:opacity-50 transition-colors"
+          >
+            {saving ? (
+              <span className="flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Sparar...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <Send className="w-4 h-4" /> Spara
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MetricBar({ label, value }: { label: string; value: number }) {
