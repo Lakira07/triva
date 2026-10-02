@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Calendar,
   Plus,
@@ -14,6 +14,8 @@ import {
   Activity,
   AlertCircle,
   CheckCircle2,
+  BarChart3,
+  Filter,
 } from 'lucide-react';
 import {
   supabase,
@@ -150,6 +152,9 @@ export default function TrainingView({ teamId }: { teamId: string }) {
     );
   }
 
+  const allCompletions = sessions.flatMap((s) => s.completions);
+  const allSessionsList = sessions;
+
   if (selectedSession) {
     return (
       <SessionDetail
@@ -184,6 +189,10 @@ export default function TrainingView({ teamId }: { teamId: string }) {
         />
       ) : (
         <>
+          <LoadSummary
+            sessions={allSessionsList}
+            players={players}
+          />
           {upcoming.length > 0 && (
             <div className="mb-6">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Kommande pass</h3>
@@ -230,6 +239,170 @@ interface SessionFormData {
   goal_id: string | null;
   assign_all: boolean;
   assigned_player_ids: string[];
+}
+
+function LoadSummary({
+  sessions,
+  players,
+}: {
+  sessions: SessionWithDetails[];
+  players: Player[];
+}) {
+  const months = useMemo(() => {
+    const map = new Map<string, { label: string; value: string }>();
+    sessions.forEach((s) => {
+      const d = new Date(s.scheduled_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          label: d.toLocaleDateString('sv-SE', { month: 'long', year: 'numeric' }),
+          value: key,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.value.localeCompare(a.value));
+  }, [sessions]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+
+  const filteredSessions = useMemo(() => {
+    if (selectedMonth === 'all') return sessions;
+    return sessions.filter((s) => {
+      const d = new Date(s.scheduled_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return key === selectedMonth;
+    });
+  }, [sessions, selectedMonth]);
+
+  const completions = filteredSessions.flatMap((s) =>
+    s.completions.map((c) => ({ ...c, sessionTitle: s.title, scheduledAt: s.scheduled_at }))
+  );
+
+  const totalActualMin = completions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
+  const totalPlannedMin = filteredSessions.reduce((sum, s) => sum + s.planned_duration_min, 0);
+  const totalActualLoad = completions.reduce(
+    (sum, c) => sum + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0
+  );
+  const totalPlannedLoad = filteredSessions.reduce(
+    (sum, s) => sum + s.planned_duration_min * s.planned_rpe, 0
+  );
+  const painCount = completions.filter((c) => c.has_pain).length;
+  const avgRpe = completions.filter((c) => c.player_rpe).length > 0
+    ? completions.filter((c) => c.player_rpe).reduce((sum, c) => sum + (c.player_rpe ?? 0), 0) / completions.filter((c) => c.player_rpe).length
+    : null;
+  const sessionCount = filteredSessions.length;
+  const completionCount = completions.length;
+
+  const playerStats = players
+    .map((p) => {
+      const playerCompletions = completions.filter((c) => c.player_id === p.id);
+      const totalMin = playerCompletions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
+      const totalLoad = playerCompletions.reduce(
+        (sum, c) => sum + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0
+      );
+      const rpeValues = playerCompletions.filter((c) => c.player_rpe).map((c) => c.player_rpe!);
+      const avgRpe = rpeValues.length > 0 ? rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length : null;
+      const painCount = playerCompletions.filter((c) => c.has_pain).length;
+      return { player: p, totalMin, totalLoad, avgRpe, painCount, completionCount: playerCompletions.length };
+    })
+    .filter((s) => s.completionCount > 0)
+    .sort((a, b) => b.totalLoad - a.totalLoad);
+
+  const maxLoad = Math.max(...playerStats.map((s) => s.totalLoad), 1);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm mb-6">
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart3 className="w-5 h-5 text-gray-700" />
+        <h3 className="font-bold text-black">Belastningssammanfattning</h3>
+      </div>
+
+      {/* Month filter */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+        <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+        <button
+          onClick={() => setSelectedMonth('all')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+            selectedMonth === 'all' ? 'bg-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+          }`}
+        >
+          Alla
+        </button>
+        {months.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => setSelectedMonth(m.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors capitalize ${
+              selectedMonth === m.value ? 'bg-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-extrabold text-black">{totalActualMin}</p>
+          <p className="text-xs text-gray-400 mt-0.5">min genomförd</p>
+        </div>
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-extrabold text-black">{totalActualLoad}</p>
+          <p className="text-xs text-gray-400 mt-0.5">AU faktisk belastning</p>
+        </div>
+        <div className="bg-gray-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-extrabold text-black">{avgRpe !== null ? avgRpe.toFixed(1) : '—'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">snitt RPE</p>
+        </div>
+        <div className={`rounded-xl p-3 text-center ${painCount > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+          <p className={`text-2xl font-extrabold ${painCount > 0 ? 'text-red-600' : 'text-black'}`}>{painCount}</p>
+          <p className="text-xs text-gray-400 mt-0.5">känningar</p>
+        </div>
+      </div>
+
+      {/* Planned vs actual */}
+      <div className="flex items-center justify-between text-xs text-gray-400 mb-4">
+        <span>{sessionCount} pass · {completionCount} genomföranden</span>
+        <span>Planerad: {totalPlannedMin} min · {totalPlannedLoad} AU</span>
+      </div>
+
+      {/* Per-player bars */}
+      {playerStats.length > 0 ? (
+        <div>
+          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Belastning per spelare</h4>
+          <div className="space-y-2.5">
+            {playerStats.map((s) => (
+              <div key={s.player.id} className="flex items-center gap-3">
+                <div className="w-28 flex-shrink-0 flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center flex-shrink-0 text-[10px] font-bold">
+                    {s.player.jersey_number ?? <User className="w-3 h-3" />}
+                  </div>
+                  <span className="text-sm font-bold text-gray-700 truncate">{s.player.name}</span>
+                </div>
+                <div className="flex-1 h-6 bg-gray-100 rounded-lg overflow-hidden relative">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#315c43] to-[#557461] rounded-lg flex items-center justify-end pr-2 transition-all"
+                    style={{ width: `${Math.max((s.totalLoad / maxLoad) * 100, 8)}%` }}
+                  >
+                    <span className="text-[10px] font-bold text-white">{s.totalLoad} AU</span>
+                  </div>
+                </div>
+                <div className="w-20 flex-shrink-0 text-right">
+                  <span className="text-xs font-bold text-gray-600">{s.totalMin} min</span>
+                  {s.painCount > 0 && (
+                    <span className="ml-1 text-[10px] font-bold text-red-500">{s.painCount}x känning</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400 text-center py-4">Inga genomförda pass att visa än.</p>
+      )}
+    </div>
+  );
 }
 
 function SessionForm({
