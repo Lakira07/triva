@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase, type Player, type WellbeingEntry, type Question, type Answer, type Response } from '@/lib/supabase';
 import { streamChat, isAIConfigured, type ChatMessage } from '@/lib/ai';
+import AIInsightCard from '@/components/AIInsightCard';
 
 interface ResponseWithAnswers extends Response {
   answers: Answer[];
@@ -490,6 +491,12 @@ function OverviewSection({ analysis }: { analysis: TeamAnalysis }) {
         <RiskCard count={analysis.lowRiskPlayers.length} label="Låg risk" color="text-green-600" bg="bg-green-50" icon={CheckCircle2} />
       </div>
 
+      <AIInsightCard
+        title="AI-djupanalys av laget"
+        context={buildTeamContext(analysis)}
+        prompt="Gör en djupare analys av lagets välmående och risknivå. Vilka mönster ser du? Vilka spelare behöver mest uppmärksamhet och varför? Ge en handlingsplan för kommande vecka. Svara på svenska, max 250 ord."
+      />
+
       {/* Quick player alerts */}
       {analysis.highRiskPlayers.length > 0 && (
         <div className="bg-white rounded-3xl border border-red-200 p-5 shadow-card">
@@ -559,6 +566,12 @@ function LineupSection({ analysis }: { analysis: TeamAnalysis }) {
           </div>
         )}
       </div>
+
+      <AIInsightCard
+        title="AI-analys av laguttagning"
+        context={buildTeamContext(analysis)}
+        prompt="Motivera laguttagningen utifrån spelarnas välmåendedata. Vilka val är mest kritiska och varför? Finns det spelare som borde bytas ut tidigare? Svara på svenska, max 200 ord."
+      />
     </div>
   );
 }
@@ -611,6 +624,12 @@ function ExercisesSection({ analysis }: { analysis: TeamAnalysis }) {
           <p className="text-sm text-gray-600 leading-relaxed font-medium">{ex.description}</p>
         </div>
       ))}
+
+      <AIInsightCard
+        title="AI-anpassade träningsövningar"
+        context={buildTeamContext(analysis)}
+        prompt="Föreslå 2-3 ytterligare övningar baserat på lagets data som inte redan nämns. Beskriv övningen, syftet och vilka spelare den riktar sig till. Svara på svenska, max 200 ord."
+      />
     </div>
   );
 }

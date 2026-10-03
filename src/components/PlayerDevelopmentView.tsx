@@ -28,6 +28,7 @@ import {
   type DevelopmentArea,
   AREA_LABELS,
 } from '@/lib/supabase';
+import AIInsightCard from '@/components/AIInsightCard';
 
 const AREA_ICON_MAP: Record<DevelopmentArea, typeof Brain> = {
   teknik: Brain,
@@ -273,7 +274,7 @@ function PlayerDetail({
   );
   const totalActualMin = playerCompletions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
   const avgRpe = playerCompletions.length > 0
-    ? playerCompletions.filter((c) => c.player_rpe).reduce((sum, c) => sum + (c.player_rpe!, 0) / playerCompletions.filter((c) => c.player_rpe).length, 0)
+    ? playerCompletions.filter((c) => c.player_rpe).reduce((sum, c) => sum + (c.player_rpe!), 0) / playerCompletions.filter((c) => c.player_rpe).length
     : null;
   const painCount = playerCompletions.filter((c) => c.has_pain).length;
 
@@ -307,6 +308,12 @@ function PlayerDetail({
           <p className="text-xs text-gray-400 mt-2 text-center">Snitt RPE: <span className="font-bold text-black">{avgRpe.toFixed(1)}</span></p>
         )}
       </div>
+
+      <AIInsightCard
+        title={`AI-analys av ${player.name}s utveckling`}
+        context={buildPlayerDevContext(player, devData)}
+        prompt="Analysera spelarens utveckling baserat på mål, bedömningar och träningsdata. Vilka styrkor och utvecklingsområden ser du? Ge tre konkreta rekommendationer för nästa period. Svara på svenska, max 200 ord."
+      />
 
       {/* Area tabs */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 overflow-x-auto">
@@ -786,4 +793,40 @@ function ChainStep({ label, value }: { label: string; value: string }) {
 
 function ChainConnector() {
   return <div className="ml-1 h-4 w-px bg-gray-200" />;
+}
+
+function buildPlayerDevContext(player: Player, devData: PlayerDevData): string {
+  const goalLines = devData.goals.map((g) =>
+    `- ${AREA_LABELS[g.area]}: ${g.target_description}${g.football_action ? ` (aktion: ${g.football_action})` : ''}${g.is_active ? ' [aktivt]' : ' [avslutat]'}`
+  ).join('\n');
+
+  const assessmentLines = devData.assessments.map((a) => {
+    const parts: string[] = [`[${AREA_LABELS[a.area]}] bedömning #${a.assessment_number}`];
+    if (a.coach_rating) parts.push(`betyg ${a.coach_rating}/5`);
+    if (a.coach_observation) parts.push(`observation: ${a.coach_observation}`);
+    if (a.player_reflection) parts.push(`spelarreflektion: ${a.player_reflection}`);
+    if (a.feedback) parts.push(`feedback: ${a.feedback}`);
+    if (a.next_steps) parts.push(`nästa steg: ${a.next_steps}`);
+    return `- ${parts.join(', ')}`;
+  }).join('\n');
+
+  const sessionLines = devData.sessions.map((s) => {
+    const comp = devData.completions.find((c) => c.session_id === s.id);
+    return `- ${s.title} (${new Date(s.scheduled_at).toLocaleDateString('sv-SE')}): planerad ${s.planned_duration_min}min RPE ${s.planned_rpe}${comp ? `, faktisk ${comp.actual_duration_min ?? '?'}min RPE ${comp.player_rpe ?? '?'}${comp.has_pain ? ', känning' : ''}` : ', ej genomförd'}`;
+  }).join('\n');
+
+  return `Du är en AI-assistent för en fotbollstränare. Här är utvecklingsdata för en spelare:
+
+Spelare: ${player.name}${player.position ? `, position: ${player.position}` : ''}
+
+IUP-mål:
+${goalLines || 'Inga mål registrerade'}
+
+Bedömningar:
+${assessmentLines || 'Inga bedömningar registrerade'}
+
+Träningspass:
+${sessionLines || 'Inga pass registrerade'}
+
+Svara på svenska. Var konkret och använd datan ovan för att ge råd.`;
 }

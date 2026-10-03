@@ -28,6 +28,7 @@ import {
   AREA_LABELS,
   SESSION_TYPE_LABELS,
 } from '@/lib/supabase';
+import AIInsightCard from '@/components/AIInsightCard';
 
 interface SessionWithDetails extends TrainingSession {
   assignments: TrainingAssignment[];
@@ -192,6 +193,12 @@ export default function TrainingView({ teamId }: { teamId: string }) {
           <LoadSummary
             sessions={allSessionsList}
             players={players}
+          />
+          <AIInsightCard
+            title="AI-analys av träningsbelastning"
+            context={buildTrainingLoadContext(allSessionsList, players)}
+            prompt="Analysera lagets träningsbelastning. Är balansen mellan planerad och faktisk belastning rimlig? Finns det spelare med för hög belastning eller känningar? Ge tre rekommendationer. Svara på svenska, max 200 ord."
+            className="mb-6"
           />
           {upcoming.length > 0 && (
             <div className="mb-6">
@@ -793,6 +800,13 @@ function SessionDetail({
         )}
       </div>
 
+      <AIInsightCard
+        title="AI-analys av passet"
+        context={buildSessionContext(session, players)}
+        prompt="Analysera detta träningspass. Är planerad belastning rimlig? Hur har spelarna genomfört det? Ge råd om uppföljning och nästa pass. Svara på svenska, max 150 ord."
+        className="mb-4"
+      />
+
       <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
         <h4 className="font-bold text-black mb-4">Spelarnas genomförande</h4>
         {assignedPlayers.length === 0 ? (
@@ -960,4 +974,57 @@ function CompletionRow({
       </div>
     </div>
   );
+}
+
+function buildTrainingLoadContext(sessions: SessionWithDetails[], players: Player[]): string {
+  const completions = sessions.flatMap((s) => s.completions);
+  const totalActualMin = completions.reduce((sum, c) => sum + (c.actual_duration_min ?? 0), 0);
+  const totalPlannedMin = sessions.reduce((sum, s) => sum + s.planned_duration_min, 0);
+  const totalActualLoad = completions.reduce((sum, c) => sum + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0);
+  const totalPlannedLoad = sessions.reduce((sum, s) => sum + s.planned_duration_min * s.planned_rpe, 0);
+  const painCount = completions.filter((c) => c.has_pain).length;
+
+  const playerLines = players.map((p) => {
+    const pc = completions.filter((c) => c.player_id === p.id);
+    if (pc.length === 0) return `- ${p.name}: inga genomförda pass`;
+    const min = pc.reduce((s, c) => s + (c.actual_duration_min ?? 0), 0);
+    const load = pc.reduce((s, c) => s + (c.actual_duration_min && c.player_rpe ? c.actual_duration_min * c.player_rpe : 0), 0);
+    const pains = pc.filter((c) => c.has_pain).length;
+    return `- ${p.name}: ${pc.length} pass, ${min} min, ${load} AU${pains > 0 ? `, ${pains} känning(ar)` : ''}`;
+  }).join('\n');
+
+  return `Du är en AI-assistent för en fotbollstränare. Här är lagets träningsdata:
+
+Pass: ${sessions.length}, Genomföranden: ${completions.length}
+Planerad: ${totalPlannedMin} min / ${totalPlannedLoad} AU
+Faktisk: ${totalActualMin} min / ${totalActualLoad} AU
+Känningar: ${painCount}
+
+Spelare:
+${playerLines}
+
+Svara på svenska. Var konkret och använd datan ovan.`;
+}
+
+function buildSessionContext(session: SessionWithDetails, players: Player[]): string {
+  const compLines = session.completions.map((c) => {
+    const p = players.find((pl) => pl.id === c.player_id);
+    return `- ${p?.name ?? 'Okänd'}: ${c.actual_duration_min ?? '?'} min, RPE ${c.player_rpe ?? '?'}${c.has_pain ? `, känning: ${c.pain_note ?? 'ej angiven'}` : ''}`;
+  }).join('\n');
+
+  return `Du är en AI-assistent för en fotbollstränare. Här är data för ett träningspass:
+
+Pass: ${session.title}
+Typ: ${SESSION_TYPE_LABELS[session.session_type]}
+Datum: ${new Date(session.scheduled_at).toLocaleDateString('sv-SE')}
+Planerad: ${session.planned_duration_min} min, RPE ${session.planned_rpe}, belastning ${session.planned_duration_min * session.planned_rpe} AU
+${session.purpose ? `Syfte: ${session.purpose}` : ''}
+${session.content ? `Innehåll: ${session.content}` : ''}
+${session.exercises ? `Övningar: ${session.exercises}` : ''}
+${session.goal ? `IUP-mål: ${AREA_LABELS[session.goal.area]} — ${session.goal.target_description}` : ''}
+
+Genomföranden:
+${compLines || 'Inga genomförda ännu'}
+
+Svara på svenska. Var konkret och använd datan ovan.`;
 }

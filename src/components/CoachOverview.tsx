@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase, type Player, type WellbeingEntry } from '@/lib/supabase';
 import LineChart from '@/components/LineChart';
+import AIInsightCard from '@/components/AIInsightCard';
 
 type Range = '7d' | '4w' | '3m' | 'custom';
 
@@ -145,6 +146,12 @@ export default function CoachOverview({ teamId, onOpenPlayer }: CoachOverviewPro
         <SummaryTile icon={<Dumbbell className="h-4 w-4" />} label="Belastning" value="—" detail="inte registrerad" tone="neutral" />
       </section>
 
+      <AIInsightCard
+        title="AI-analys av dagens bild"
+        context={buildOverviewContext(players, entries, latestByPlayer, registeredToday, missingToday)}
+        prompt="Ge en kort analys av lagets dagsbild. Vilka spelare behöver uppmärksamhet? Vilka tre rekommendationer har du för tränaren idag? Svara på svenska, max 150 ord."
+      />
+
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
         <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -225,4 +232,29 @@ function StatusValue({ value, low, high }: { value?: number; low: boolean; high:
   if (value == null) return <span className="text-gray-300">—</span>;
   const flagged = (low && value <= 2) || (high && value >= 4);
   return <span className={`font-semibold ${flagged ? 'text-amber-700' : 'text-gray-700'}`}>{value}/5</span>;
+}
+
+function buildOverviewContext(
+  players: Player[],
+  entries: WellbeingEntry[],
+  latestByPlayer: Map<string, WellbeingEntry>,
+  registeredToday: Player[],
+  missingToday: Player[]
+): string {
+  const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+  const playerLines = players.map((p) => {
+    const e = latestByPlayer.get(p.id);
+    if (!e) return `- ${p.name}${p.position ? ` (${p.position})` : ''}: ingen status registrerad`;
+    const isToday = e.created_at.slice(0, 10) === todayKey;
+    return `- ${p.name}${p.position ? ` (${p.position})` : ''}: sömn ${e.sleep}/5, energi ${e.energy}/5, stress ${e.stress}/5, ömhet ${e.soreness}/5 (${isToday ? 'idag' : 'äldre'})`;
+  }).join('\n');
+
+  return `Du är en AI-assistent för en fotbollstränare. Här är lagets dagsbild:
+
+Totalt ${players.length} spelare, ${registeredToday.length} har registrerat status idag, ${missingToday.length} saknar registrering.
+
+Spelare:
+${playerLines}
+
+Svara på svenska. Var konkret och använd datan ovan.`;
 }
