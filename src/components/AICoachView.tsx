@@ -19,7 +19,7 @@ import {
   Send,
 } from 'lucide-react';
 import { supabase, type Player, type WellbeingEntry, type Question, type Answer, type Response } from '@/lib/supabase';
-import { streamChat, isAIConfigured, type ChatMessage } from '@/lib/ai';
+import { chat, streamChat, isAIConfigured, type ChatMessage } from '@/lib/ai';
 import AIInsightCard from '@/components/AIInsightCard';
 
 interface ResponseWithAnswers extends Response {
@@ -467,22 +467,7 @@ function OverviewSection({ analysis }: { analysis: TeamAnalysis }) {
       </div>
 
       {/* Team recommendations */}
-      <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
-        <h3 className="font-bold text-black mb-4 flex items-center gap-2 text-heading">
-          <Sparkles className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
-          AI-rekommendationer för laget
-        </h3>
-        <div className="space-y-3">
-          {analysis.teamRecommendations.map((rec, i) => (
-            <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3">
-              <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-extrabold flex-shrink-0">
-                {i + 1}
-              </div>
-              <p className="text-sm text-gray-700 leading-relaxed pt-0.5 font-medium">{rec}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <AIRecommendationsCard analysis={analysis} />
 
       {/* Risk distribution */}
       <div className="grid grid-cols-3 gap-3">
@@ -533,6 +518,52 @@ function RiskCard({ count, label, color, bg, icon: Icon }: { count: number; labe
       <Icon className={`w-5 h-5 mx-auto mb-1 ${color}`} />
       <p className={`text-2xl font-bold ${color}`}>{count}</p>
       <p className="text-xs text-gray-500">{label}</p>
+    </div>
+  );
+}
+
+function AIRecommendationsCard({ analysis }: { analysis: TeamAnalysis }) {
+  const [recommendations, setRecommendations] = useState<string[]>(analysis.teamRecommendations);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateRecommendations = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await chat([
+        { role: 'system', content: buildTeamContext(analysis) },
+        { role: 'user', content: 'Ge exakt tre konkreta rekommendationer för tränaren baserat på lagets data. Svara på svenska. Skriv en rekommendation per rad utan numrering eller punktlista.' },
+      ], { temperature: 0.7, maxTokens: 500 });
+      const next = result.split('\n').map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean).slice(0, 3);
+      if (next.length > 0) setRecommendations(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunde inte uppdatera rekommendationerna');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h3 className="font-bold text-black flex items-center gap-2 text-heading">
+          <Sparkles className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
+          AI-rekommendationer för laget
+        </h3>
+        <button onClick={updateRecommendations} disabled={loading} className="text-xs font-bold text-gray-500 hover:text-black disabled:opacity-40 transition-colors">
+          {loading ? 'Analyserar...' : 'Uppdatera'}
+        </button>
+      </div>
+      <div className="space-y-3">
+        {recommendations.map((rec, i) => (
+          <div key={`${rec}-${i}`} className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3">
+            <div className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-extrabold flex-shrink-0">{i + 1}</div>
+            <p className="text-sm text-gray-700 leading-relaxed pt-0.5 font-medium">{rec}</p>
+          </div>
+        ))}
+      </div>
+      {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
