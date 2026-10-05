@@ -1,6 +1,6 @@
 const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'stealth/space-bunny-alpha';
+const MODEL = 'openai/gpt-4o-mini';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
