@@ -568,32 +568,77 @@ function AIRecommendationsCard({ analysis }: { analysis: TeamAnalysis }) {
   );
 }
 
+interface GeneratedLineupChoice {
+  playerName: string;
+  reason: string;
+  starter: boolean;
+}
+
 function LineupSection({ analysis }: { analysis: TeamAnalysis }) {
-  const starters = analysis.suggestedLineup.filter((l) => l.starter);
-  const bench = analysis.suggestedLineup.filter((l) => !l.starter);
+  const [generatedLineup, setGeneratedLineup] = useState<GeneratedLineupChoice[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchLineup = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await chat([
+        { role: 'system', content: buildTeamContext(analysis) },
+        { role: 'user', content: 'Skapa en laguttagning med exakt en rad per spelare. Använd endast spelarnamn från datan. Svara endast som JSON-array utan markdown: [{"playerName":"...","reason":"...","starter":true}]. Ta hänsyn till välmående, risk, position och belastning.' },
+      ], { temperature: 0.4, maxTokens: 1200 });
+      const parsed: unknown = JSON.parse(result.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim());
+      if (!Array.isArray(parsed)) throw new Error('AI-svaret hade fel format');
+      const next = parsed.filter((item): item is GeneratedLineupChoice => {
+        if (!item || typeof item !== 'object') return false;
+        const value = item as Record<string, unknown>;
+        return typeof value.playerName === 'string' && typeof value.reason === 'string' && typeof value.starter === 'boolean';
+      }).filter((choice) => analysis.playerAnalyses.some((a) => a.player.name === choice.playerName));
+      if (next.length === 0) throw new Error('AI-svaret innehöll inga giltiga spelare');
+      setGeneratedLineup(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunde inte hämta AI-laguttagning');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const lineup = generatedLineup
+    ? generatedLineup.map((choice) => ({
+        ...choice,
+        player: analysis.playerAnalyses.find((a) => a.player.name === choice.playerName)!.player,
+      }))
+    : analysis.suggestedLineup;
+  const starters = lineup.filter((l) => l.starter);
+  const bench = lineup.filter((l) => !l.starter);
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
-        <h3 className="font-bold text-black mb-1 flex items-center gap-2 text-heading">
-          <Users className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
-          AI-föreslagen laguttagning
-        </h3>
-        <p className="text-sm text-gray-500 mb-4 font-medium">Baserat på spelarnas välmående, form och position.</p>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-bold text-black mb-1 flex items-center gap-2 text-heading">
+              <Users className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
+              AI-föreslagen laguttagning
+            </h3>
+            <p className="text-sm text-gray-500 font-medium">{generatedLineup ? 'Senaste AI-uttagningen baserad på lagets aktuella data.' : 'Klicka på Hämta för en AI-baserad laguttagning.'}</p>
+          </div>
+          <button onClick={fetchLineup} disabled={loading} className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-black disabled:opacity-40 transition-colors">
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {loading ? 'Hämtar' : generatedLineup ? 'Hämta igen' : 'Hämta'}
+          </button>
+        </div>
+        {error && <p className="mb-3 text-xs text-red-600">{error}</p>}
 
         <div className="space-y-2 mb-5">
           <p className="text-xs font-extrabold text-gray-400 uppercase tracking-wider">Startelva</p>
-          {starters.map((s) => (
-            <LineupRow key={s.player.id} player={s.player} reason={s.reason} starter />
-          ))}
+          {starters.map((s) => <LineupRow key={s.player.id} player={s.player} reason={s.reason} starter />)}
         </div>
 
         {bench.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-extrabold text-gray-400 uppercase tracking-wider">Bänk / Vila</p>
-            {bench.map((s) => (
-              <LineupRow key={s.player.id} player={s.player} reason={s.reason} starter={false} />
-            ))}
+            {bench.map((s) => <LineupRow key={s.player.id} player={s.player} reason={s.reason} starter={false} />)}
           </div>
         )}
       </div>
@@ -790,22 +835,7 @@ function PlayersSection({ analysis }: { analysis: TeamAnalysis }) {
           </div>
         )}
 
-        <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
-          <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-gray-700" strokeWidth={2.5} />
-            Rekommendationer
-          </h4>
-          <div className="space-y-2">
-            {selected.recommendations.map((rec, i) => (
-              <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3">
-                <div className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs font-extrabold flex-shrink-0">
-                  {i + 1}
-                </div>
-                <p className="text-sm text-gray-700 leading-relaxed pt-0.5 font-medium">{rec}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AIPlayerRecommendationsCard playerAnalysis={selected} />
       </div>
     );
   }
@@ -843,6 +873,61 @@ function PlayersSection({ analysis }: { analysis: TeamAnalysis }) {
           </div>
         </button>
       ))}
+    </div>
+  );
+}
+
+function AIPlayerRecommendationsCard({ playerAnalysis }: { playerAnalysis: PlayerAnalysis }) {
+  const [recommendations, setRecommendations] = useState<string[]>(playerAnalysis.recommendations);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchRecommendations = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const metrics = [
+        playerAnalysis.avgSleep !== null ? `sömn ${playerAnalysis.avgSleep.toFixed(1)}/5` : null,
+        playerAnalysis.avgEnergy !== null ? `energi ${playerAnalysis.avgEnergy.toFixed(1)}/5` : null,
+        playerAnalysis.avgMood !== null ? `sinneslag ${playerAnalysis.avgMood.toFixed(1)}/5` : null,
+        playerAnalysis.avgStress !== null ? `stress ${playerAnalysis.avgStress.toFixed(1)}/5` : null,
+        playerAnalysis.avgSoreness !== null ? `stelhet ${playerAnalysis.avgSoreness.toFixed(1)}/5` : null,
+      ].filter(Boolean).join(', ');
+      const result = await chat([
+        { role: 'system', content: 'Du är en fotbollscoach som ger konkreta och empatiska råd på svenska.' },
+        { role: 'user', content: `Analysera ${playerAnalysis.player.name}. Data: ${metrics || 'ingen mätdata'}. Risknivå: ${playerAnalysis.riskLevel}. Riskfaktorer: ${playerAnalysis.riskFactors.join(', ') || 'inga'}. Ge exakt tre konkreta rekommendationer, en per rad, utan numrering.` },
+      ], { temperature: 0.7, maxTokens: 500 });
+      const next = result.split('\n').map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim()).filter(Boolean).slice(0, 3);
+      if (next.length === 0) throw new Error('AI-svaret innehöll inga rekommendationer');
+      setRecommendations(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunde inte hämta spelarens AI-rekommendationer');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-gray-700" strokeWidth={2.5} />
+          AI-rekommendationer
+        </h4>
+        <button onClick={fetchRecommendations} disabled={loading} className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-black disabled:opacity-40 transition-colors">
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {loading ? 'Hämtar' : recommendations.length > 0 ? 'Hämta igen' : 'Hämta'}
+        </button>
+      </div>
+      <div className="space-y-2">
+        {recommendations.map((rec, i) => (
+          <div key={`${rec}-${i}`} className="flex items-start gap-3 bg-gray-50 rounded-2xl p-3">
+            <div className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs font-extrabold flex-shrink-0">{i + 1}</div>
+            <p className="text-sm text-gray-700 leading-relaxed pt-0.5 font-medium">{rec}</p>
+          </div>
+        ))}
+      </div>
+      {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
