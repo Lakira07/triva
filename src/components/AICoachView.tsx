@@ -630,37 +630,81 @@ function LineupRow({ player, reason, starter }: { player: Player; reason: string
   );
 }
 
+interface GeneratedExercise {
+  title: string;
+  target: string;
+  description: string;
+}
+
 function ExercisesSection({ analysis }: { analysis: TeamAnalysis }) {
+  const [generatedExercises, setGeneratedExercises] = useState<GeneratedExercise[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchExercises = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await chat([
+        { role: 'system', content: buildTeamContext(analysis) },
+        { role: 'user', content: 'Skapa exakt tre individuellt anpassade fotbollsövningar för detta lag. Ta hänsyn till sömn, energi, stress, stelhet och sinneslag. Svara endast som JSON-array utan markdown: [{"title":"...","target":"...","description":"..."}]. Beskriv tid, upplägg och fokus konkret på svenska.' },
+      ], { temperature: 0.7, maxTokens: 900 });
+      const jsonText = result.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed: unknown = JSON.parse(jsonText);
+      if (!Array.isArray(parsed)) throw new Error('AI-svaret hade fel format');
+      const next = parsed.filter((item): item is GeneratedExercise => {
+        if (!item || typeof item !== 'object') return false;
+        const value = item as Record<string, unknown>;
+        return typeof value.title === 'string' && typeof value.target === 'string' && typeof value.description === 'string';
+      }).slice(0, 3);
+      if (next.length === 0) throw new Error('AI-svaret innehöll inga övningar');
+      setGeneratedExercises(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunde inte hämta AI-övningar');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exercises = generatedExercises ?? analysis.suggestedExercises;
+  const icons = [Dumbbell, Moon, Zap, Heart, Users, Brain];
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
-        <h3 className="font-bold text-black mb-1 flex items-center gap-2 text-heading">
-          <Dumbbell className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
-          AI-föreslagna övningar
-        </h3>
-        <p className="text-sm text-gray-500 mb-4 font-medium">Anpassade utifrån lagets nuvarande status och individuella behov.</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-black mb-1 flex items-center gap-2 text-heading">
+              <Dumbbell className="w-5 h-5 text-gray-700" strokeWidth={2.5} />
+              AI-föreslagna övningar
+            </h3>
+            <p className="text-sm text-gray-500 font-medium">{generatedExercises ? 'Senaste AI-förslagen baserade på lagets aktuella data.' : 'Klicka på Hämta för individuellt anpassade övningar.'}</p>
+          </div>
+          <button onClick={fetchExercises} disabled={loading} className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-black disabled:opacity-40 transition-colors">
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {loading ? 'Hämtar' : generatedExercises ? 'Hämta igen' : 'Hämta'}
+          </button>
+        </div>
+        {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
       </div>
 
-      {analysis.suggestedExercises.map((ex, i) => (
-        <div key={i} className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
-          <div className="flex items-start gap-3 mb-3">
-            <div className="w-11 h-11 rounded-2xl bg-black text-white flex items-center justify-center flex-shrink-0">
-              <ex.icon className="w-5 h-5" strokeWidth={2.5} />
+      {exercises.map((ex, i) => {
+        const Icon: typeof Dumbbell = 'icon' in ex ? (ex as TeamAnalysis['suggestedExercises'][number]).icon : icons[i % icons.length];
+        return (
+          <div key={`${ex.title}-${i}`} className="bg-white rounded-3xl border border-gray-200 p-5 shadow-card">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-11 h-11 rounded-2xl bg-black text-white flex items-center justify-center flex-shrink-0">
+                <Icon className="w-5 h-5" strokeWidth={2.5} />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-bold text-black text-heading">{ex.title}</h4>
+                <p className="text-xs text-gray-400 mt-0.5 font-medium">Målgrupp: {ex.target}</p>
+              </div>
             </div>
-            <div className="flex-1">
-              <h4 className="font-bold text-black text-heading">{ex.title}</h4>
-              <p className="text-xs text-gray-400 mt-0.5 font-medium">Målgrupp: {ex.target}</p>
-            </div>
+            <p className="text-sm text-gray-600 leading-relaxed font-medium">{ex.description}</p>
           </div>
-          <p className="text-sm text-gray-600 leading-relaxed font-medium">{ex.description}</p>
-        </div>
-      ))}
-
-      <AIInsightCard
-        title="AI-anpassade träningsövningar"
-        context={buildTeamContext(analysis)}
-        prompt="Föreslå 2-3 ytterligare övningar baserat på lagets data som inte redan nämns. Beskriv övningen, syftet och vilka spelare den riktar sig till. Svara på svenska, max 200 ord."
-      />
+        );
+      })}
     </div>
   );
 }
