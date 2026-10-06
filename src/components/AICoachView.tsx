@@ -21,6 +21,8 @@ import {
 import { supabase, type Player, type WellbeingEntry, type Question, type Answer, type Response } from '@/lib/supabase';
 import { chat, streamChat, isAIConfigured, type ChatMessage } from '@/lib/ai';
 import AIInsightCard from '@/components/AIInsightCard';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ResponseWithAnswers extends Response {
   answers: Answer[];
@@ -980,7 +982,10 @@ function ChatSection({ analysis }: { analysis: TeamAnalysis }) {
 
     const systemContext = buildTeamContext(analysis);
     const chatMessages: ChatMessage[] = [
-      { role: 'system', content: systemContext },
+      {
+        role: 'system',
+        content: `${systemContext}\n\nSvara på svenska. Använd Markdown för tydlig struktur när det hjälper, till exempel korta rubriker, punktlistor och fetstil. Håll svaren lättlästa och undvik onödig formatering.`,
+      },
       ...newMessages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
@@ -1052,7 +1057,11 @@ function ChatSection({ analysis }: { analysis: TeamAnalysis }) {
                 ? 'bg-black text-white font-medium'
                 : 'bg-gray-100 text-gray-800'
             }`}>
-              {msg.content || (streaming && i === messages.length - 1 ? (
+              {msg.content ? (msg.role === 'assistant' ? (
+                <div className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-extrabold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-extrabold [&_h3]:mb-1 [&_h3]:mt-3 [&_h3]:font-extrabold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_strong]:font-extrabold [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-gray-300 [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:font-mono [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/5 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_a]:underline [&_a]:underline-offset-2">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                </div>
+              ) : msg.content) : (streaming && i === messages.length - 1 ? (
                 <span className="inline-flex gap-1">
                   <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />

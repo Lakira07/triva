@@ -117,24 +117,24 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
           </div>
         </section>
 
-        <section className="bg-[#171717] px-5 py-10 text-white sm:px-8 sm:py-12" aria-label="Trivas spelare och lag">
-          <div className="mx-auto grid max-w-6xl gap-8 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-12">
+        <section className="border-y border-[#deded4] bg-white/55 px-5 py-9 sm:px-8 sm:py-11" aria-label="Trivas spelare och lag">
+          <div className="mx-auto grid max-w-6xl gap-7 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-10">
             <div>
-              <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-[#d7f06c]">Triva växer</p>
+              <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-[#ef5b3f]">Triva växer</p>
               <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.04em] sm:text-3xl">Tillsammans gör vi skillnad.</h2>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#d7f06c]"><Users className="h-5 w-5" /></span>
+            <div className="flex items-center gap-3 sm:border-l sm:border-[#deded4] sm:pl-8">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#d7f06c] text-[#171717]"><Users className="h-5 w-5" /></span>
               <div>
-                <p className="text-3xl font-extrabold tabular-nums">{stats.players?.toLocaleString('sv-SE') ?? '—'}</p>
-                <p className="text-sm font-semibold text-white/55">spelare</p>
+                <p className="text-3xl font-extrabold tabular-nums leading-none">{stats.players?.toLocaleString('sv-SE') ?? '—'}</p>
+                <p className="mt-1 text-sm font-semibold text-[#85857b]">spelare</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#d7f06c]"><Shield className="h-5 w-5" /></span>
+            <div className="flex items-center gap-3 sm:border-l sm:border-[#deded4] sm:pl-8">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#d7f06c] text-[#171717]"><Shield className="h-5 w-5" /></span>
               <div>
-                <p className="text-3xl font-extrabold tabular-nums">{stats.teams?.toLocaleString('sv-SE') ?? '—'}</p>
-                <p className="text-sm font-semibold text-white/55">lag</p>
+                <p className="text-3xl font-extrabold tabular-nums leading-none">{stats.teams?.toLocaleString('sv-SE') ?? '—'}</p>
+                <p className="mt-1 text-sm font-semibold text-[#85857b]">lag</p>
               </div>
             </div>
           </div>
