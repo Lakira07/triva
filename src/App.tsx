@@ -7,8 +7,9 @@ import AdminDashboard from '@/components/AdminDashboard';
 import PlayerPortal from '@/components/PlayerPortal';
 import SuperAdmin from '@/components/SuperAdmin';
 import BookmarkPrompt from '@/components/BookmarkPrompt';
+import DemoBookingPage from '@/components/DemoBookingPage';
 
-type Route = 'welcome' | 'player' | 'trainer-auth' | 'trainer-dashboard' | 'admin';
+type Route = 'welcome' | 'demo' | 'player' | 'trainer-auth' | 'trainer-dashboard' | 'admin';
 
 interface AdminSession {
   email: string;
@@ -17,6 +18,7 @@ interface AdminSession {
 
 function getRouteFromHash(): Route {
   const hash = window.location.hash;
+  if (hash === '#/demo') return 'demo';
   if (hash === '#/player') return 'player';
   if (hash === '#/trainer') return 'trainer-auth';
   if (hash === '#/dashboard') return 'trainer-dashboard';
@@ -146,6 +148,15 @@ export default function App() {
         />
         <BookmarkPrompt />
       </div>
+    );
+  }
+
+  if (route === 'demo') {
+    return (
+      <>
+        <DemoBookingPage />
+        <BookmarkPrompt />
+      </>
     );
   }
 

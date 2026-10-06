@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   BarChart3,
@@ -9,6 +10,7 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface WelcomePageProps {
   onSelectPlayer: () => void;
@@ -16,6 +18,34 @@ interface WelcomePageProps {
 }
 
 export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: WelcomePageProps) {
+  const [stats, setStats] = useState<{ players: number | null; teams: number | null }>({
+    players: null,
+    teams: null,
+  });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const [playersResult, teamsResult] = await Promise.all([
+        supabase.from('players').select('*', { count: 'exact', head: true }),
+        supabase.from('teams').select('*', { count: 'exact', head: true }),
+      ]);
+
+      if (playersResult.error || teamsResult.error) {
+        console.error('Error fetching welcome page stats:', playersResult.error ?? teamsResult.error);
+        return;
+      }
+
+      setStats({
+        players: playersResult.count ?? 0,
+        teams: teamsResult.count ?? 0,
+      });
+    };
+
+    void fetchStats();
+    const intervalId = window.setInterval(() => void fetchStats(), 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   return (
     <div className="min-h-screen overflow-hidden bg-[#f5f5f0] text-[#171717]">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
@@ -26,7 +56,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
           <span className="text-xl font-extrabold tracking-[-0.05em]">Triva</span>
         </a>
         <a
-          href="mailto:hej@triva.se?subject=Jag vill boka en demo"
+          href="#/demo"
           className="hidden items-center gap-2 text-sm font-bold text-[#171717] transition-colors hover:text-[#ef5b3f] sm:flex"
         >
           Boka en demo <ArrowRight className="h-4 w-4" />
@@ -47,7 +77,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <a
-                href="mailto:hej@triva.se?subject=Jag vill boka en demo"
+                href="#/demo"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#ef5b3f] px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-[#ef5b3f]/20 transition-transform hover:-translate-y-0.5"
               >
                 <Mail className="h-4 w-4" /> Boka en kostnadsfri demo
@@ -66,7 +96,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
             <div className="absolute bottom-0 left-0 z-10 w-[87%] rounded-[1.75rem] bg-[#171717] p-5 text-white shadow-2xl shadow-black/20 sm:p-7">
               <div className="mb-8 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/50">Lagets puls</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-white/50">Lagets Belastning</p>
                   <p className="mt-1 text-2xl font-extrabold tracking-[-0.04em]">Vecka 38</p>
                 </div>
                 <div className="rounded-full bg-[#d7f06c] px-3 py-1.5 text-xs font-extrabold text-[#171717]">+12%</div>
@@ -87,6 +117,29 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
           </div>
         </section>
 
+        <section className="bg-[#171717] px-5 py-10 text-white sm:px-8 sm:py-12" aria-label="Trivas spelare och lag">
+          <div className="mx-auto grid max-w-6xl gap-8 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-12">
+            <div>
+              <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-[#d7f06c]">Triva växer</p>
+              <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.04em] sm:text-3xl">Tillsammans gör vi skillnad.</h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#d7f06c]"><Users className="h-5 w-5" /></span>
+              <div>
+                <p className="text-3xl font-extrabold tabular-nums">{stats.players?.toLocaleString('sv-SE') ?? '—'}</p>
+                <p className="text-sm font-semibold text-white/55">spelare</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#d7f06c]"><Shield className="h-5 w-5" /></span>
+              <div>
+                <p className="text-3xl font-extrabold tabular-nums">{stats.teams?.toLocaleString('sv-SE') ?? '—'}</p>
+                <p className="text-sm font-semibold text-white/55">lag</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="border-y border-[#deded4] bg-white/55" id="sa-fungerar-det">
           <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
             <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
@@ -95,7 +148,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
                 <h2 className="mt-3 text-4xl font-extrabold leading-tight tracking-[-0.05em] sm:text-5xl">Från magkänsla till insikt.</h2>
               </div>
               <div className="grid gap-8 sm:grid-cols-3">
-                <div><HeartPulse className="h-7 w-7 text-[#ef5b3f]" /><h3 className="mt-5 text-lg font-extrabold">Känn av läget</h3><p className="mt-2 text-sm leading-6 text-[#686860]">Spelare svarar snabbt och anonymt på frågor om sin vardag.</p></div>
+                <div><HeartPulse className="h-7 w-7 text-[#ef5b3f]" /><h3 className="mt-5 text-lg font-extrabold">Känn av läget</h3><p className="mt-2 text-sm leading-6 text-[#686860]">Spelare svarar snabbt på frågor om sin vardag.</p></div>
                 <div><BarChart3 className="h-7 w-7 text-[#ef5b3f]" /><h3 className="mt-5 text-lg font-extrabold">Se mönstren</h3><p className="mt-2 text-sm leading-6 text-[#686860]">Tränare får en tydlig bild av gruppens utveckling över tid.</p></div>
                 <div><Check className="h-7 w-7 text-[#ef5b3f]" /><h3 className="mt-5 text-lg font-extrabold">Agera tidigt</h3><p className="mt-2 text-sm leading-6 text-[#686860]">Gör rätt insats innan små signaler blir stora problem.</p></div>
               </div>
@@ -106,7 +159,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
         <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
           <div className="flex flex-col items-start justify-between gap-8 rounded-[1.75rem] bg-[#d7f06c] px-6 py-8 sm:flex-row sm:items-center sm:px-10 sm:py-10">
             <div><p className="text-sm font-extrabold uppercase tracking-[0.14em] text-black/55">Nyfiken på Triva?</p><h2 className="mt-2 text-3xl font-extrabold tracking-[-0.05em] sm:text-4xl">Se hur det kan fungera för ert lag.</h2></div>
-            <a href="mailto:hej@triva.se?subject=Jag vill boka en demo" className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#171717] px-5 py-3.5 text-sm font-extrabold text-white transition-transform hover:-translate-y-0.5"><Mail className="h-4 w-4" /> Kontakta oss</a>
+            <a href="#/demo" className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#171717] px-5 py-3.5 text-sm font-extrabold text-white transition-transform hover:-translate-y-0.5"><Mail className="h-4 w-4" /> Boka en demo</a>
           </div>
         </section>
 

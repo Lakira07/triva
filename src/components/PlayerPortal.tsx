@@ -65,7 +65,6 @@ export default function PlayerPortal() {
   const [view, setView] = useState<View>('team-login');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ weekly_survey_required: 1, weekly_wellbeing_required: 1 });
-  const [weeklySurveyCount, setWeeklySurveyCount] = useState(0);
   const [weeklyWellbeingCount, setWeeklyWellbeingCount] = useState(0);
   const [recentWellbeing, setRecentWellbeing] = useState<WellbeingEntry[]>([]);
   const [section, setSection] = useState<PlayerSection>('dashboard');
@@ -73,21 +72,12 @@ export default function PlayerPortal() {
 
   const fetchProgress = useCallback(async (playerId: string) => {
     const weekStart = startOfWeek(new Date()).toISOString();
-    const [{ count: sCount }, { count: wCount }] = await Promise.all([
-      supabase
-        .from('responses')
-        .select('*', { count: 'exact', head: true })
-        .eq('player_id', playerId)
-        .eq('team_id', team!.id)
-        .gte('created_at', weekStart),
-      supabase
-        .from('wellbeing_entries')
-        .select('*', { count: 'exact', head: true })
-        .eq('player_id', playerId)
-        .eq('team_id', team!.id)
-        .gte('created_at', weekStart),
-    ]);
-    setWeeklySurveyCount(sCount ?? 0);
+    const { count: wCount } = await supabase
+      .from('wellbeing_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('player_id', playerId)
+      .eq('team_id', team!.id)
+      .gte('created_at', weekStart);
     setWeeklyWellbeingCount(wCount ?? 0);
   }, [team]);
 
@@ -229,9 +219,6 @@ export default function PlayerPortal() {
   }
 
   // PLAYER WORKSPACE
-  const surveyTarget = settings.weekly_survey_required;
-  const surveyComplete = weeklySurveyCount >= surveyTarget;
-
   const wbTarget = settings.weekly_wellbeing_required;
   const wbComplete = weeklyWellbeingCount >= wbTarget;
   const wbPct = wbTarget > 0 ? Math.min((weeklyWellbeingCount / wbTarget) * 100, 100) : 100;
@@ -362,10 +349,6 @@ export default function PlayerPortal() {
           <PlayerTrainingSection
             playerId={player.id}
             teamId={team!.id}
-            hasSurveyQuestions={questions.length > 0}
-            surveyComplete={surveyComplete && questions.length > 0}
-            surveyRemaining={Math.max(surveyTarget - weeklySurveyCount, 0)}
-            onOpenSurvey={() => setView('survey')}
           />
         )}
         {section === 'status' && (
@@ -469,17 +452,9 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
 function PlayerTrainingSection({
   playerId,
   teamId,
-  hasSurveyQuestions,
-  surveyComplete,
-  surveyRemaining,
-  onOpenSurvey,
 }: {
   playerId: string;
   teamId: string;
-  hasSurveyQuestions: boolean;
-  surveyComplete: boolean;
-  surveyRemaining: number;
-  onOpenSurvey: () => void;
 }) {
   const [allSessions, setAllSessions] = useState<TrainingSession[]>([]);
   const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
@@ -529,16 +504,6 @@ function PlayerTrainingSection({
   return (
     <div className="max-w-3xl">
       <SectionHeading icon={<CalendarDays className="w-5 h-5" />} eyebrow="Träning & belastning" title="Träningen kopplas till dina mål" description="Planerade pass, genomförd tid, faktisk belastning och berörda utvecklingsområden visas här när tränaren har lagt upp träningsplanen." />
-      <div className="mt-5">
-        <ActionCard
-          onClick={onOpenSurvey}
-          disabled={!hasSurveyQuestions}
-          icon={<ListChecks className="w-6 h-6" />}
-          title="Spelarenkät"
-          subtitle={!hasSurveyQuestions ? 'Inga frågor just nu' : surveyComplete ? 'Klar för denna vecka' : `${surveyRemaining} inlämning(ar) kvar`}
-          complete={surveyComplete}
-        />
-      </div>
 
       {mySessions.length === 0 ? (
         <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
