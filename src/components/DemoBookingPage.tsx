@@ -1,20 +1,41 @@
-import type { FormEvent } from 'react';
-import { ArrowLeft, Mail, Shield } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { ArrowLeft, CheckCircle2, Mail, Shield } from 'lucide-react';
 
 export default function DemoBookingPage() {
-  function handleDemoRequest(event: FormEvent<HTMLFormElement>) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  async function handleDemoRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const body = [
-      `Lag/förening: ${values.get('team')}`,
-      `Idrott: ${values.get('sport') || 'Inte angivet'}`,
-      `Antal spelare: ${values.get('players') || 'Inte angivet'}`,
-      `Kontaktperson: ${values.get('contact')}`,
-      `E-post: ${values.get('email')}`,
-      `Telefon: ${values.get('phone') || 'Inte angivet'}`,
-      `Ort/kommun: ${values.get('location')}`,
-    ].join('\n');
-    window.location.href = `mailto:hej@triva.se?subject=${encodeURIComponent('Boka en kostnadsfri demo')}&body=${encodeURIComponent(body)}`;
+    const form = event.currentTarget;
+    const endpoint = import.meta.env.VITE_GOOGLE_SHEETS_WEB_APP_URL?.trim();
+    if (!endpoint) {
+      setErrorMessage('Formuläret är inte anslutet ännu. Mejla hej@triva.se så hjälper vi dig.');
+      return;
+    }
+
+    const payload = new URLSearchParams();
+    new FormData(form).forEach((value, key) => {
+      if (typeof value === 'string') payload.append(key, value);
+    });
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      await fetch(endpoint, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: payload.toString(),
+      });
+      setSubmitted(true);
+      form.reset();
+    } catch {
+      setErrorMessage('Det gick inte att skicka förfrågan. Försök igen eller mejla hej@triva.se.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -38,7 +59,20 @@ export default function DemoBookingPage() {
           <p className="mt-4 max-w-md leading-7 text-[#686860]">Fyll i formuläret så hör vi av oss för att hitta en tid som passar.</p>
         </section>
 
+        {submitted ? (
+          <div role="status" className="flex items-start gap-4 rounded-xl border border-[#cad7b0] bg-white p-6 sm:col-span-2">
+            <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-[#315c43]" />
+            <div>
+              <h2 className="font-extrabold">Tack för din förfrågan!</h2>
+              <p className="mt-1 text-sm leading-6 text-[#686860]">Vi har tagit emot den och hör av oss för att hitta en tid som passar.</p>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleDemoRequest} className="grid content-start gap-5 sm:grid-cols-2">
+          <div aria-hidden="true" className="absolute left-[-10000px] top-auto h-px w-px overflow-hidden">
+            <label htmlFor="website">Lämna detta fält tomt</label>
+            <input id="website" name="website" tabIndex={-1} autoComplete="off" />
+          </div>
           <label className="grid gap-2 text-sm font-bold sm:col-span-2">
             Lag eller förening
             <input name="team" required autoComplete="organization" className="rounded-lg border border-[#d8d8cd] bg-white px-4 py-3 font-normal outline-none focus:border-[#ef5b3f]" />
@@ -67,10 +101,12 @@ export default function DemoBookingPage() {
             Ort eller kommun
             <input name="location" required autoComplete="address-level2" className="rounded-lg border border-[#d8d8cd] bg-white px-4 py-3 font-normal outline-none focus:border-[#ef5b3f]" />
           </label>
-          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#ef5b3f] px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-[#ef5b3f]/20 transition-transform hover:-translate-y-0.5 sm:col-span-2 sm:justify-self-start">
-            <Mail className="h-4 w-4" /> Skicka demo-förfrågan
+          {errorMessage && <p role="alert" className="text-sm font-semibold text-red-700 sm:col-span-2">{errorMessage}</p>}
+          <button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#ef5b3f] px-5 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-[#ef5b3f]/20 transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-70 sm:col-span-2 sm:justify-self-start">
+            <Mail className="h-4 w-4" /> {isSubmitting ? 'Skickar...' : 'Skicka demo-förfrågan'}
           </button>
         </form>
+        )}
       </div>
     </main>
   );
