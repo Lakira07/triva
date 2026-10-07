@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Sparkles, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { chat, isAIConfigured, type ChatMessage } from '@/lib/ai';
 
 interface AIInsightCardProps {
@@ -82,7 +84,9 @@ export default function AIInsightCard({ context, prompt, title = 'AI-insikt', cl
       )}
 
       {!loading && insight && (
-        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{insight}</div>
+        <div className="prose prose-sm max-w-none text-sm text-gray-700 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-bold [&_h1]:text-black [&_h2]:text-black [&_h3]:text-black [&_ul]:my-2 [&_ol]:my-2 [&_li]:my-0.5 [&_p]:my-1.5 [&_strong]:font-bold [&_table]:text-left [&_th]:font-bold [&_th]:text-gray-700 [&_td]:text-gray-600 [&_blockquote]:border-l-2 [&_blockquote]:border-gray-200 [&_blockquote]:pl-3 [&_blockquote]:text-gray-600">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{insight}</ReactMarkdown>
+        </div>
       )}
     </div>
   );
