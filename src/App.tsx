@@ -161,7 +161,6 @@ export default function App() {
         <WelcomePage
           onSelectPlayer={() => (window.location.hash = '#/player')}
           onSelectTrainer={() => (window.location.hash = '#/trainer')}
-          onSelectAdminRegister={() => (window.location.hash = '#/admin-register')}
         />
         <BookmarkPrompt />
       </div>
@@ -222,7 +221,6 @@ export default function App() {
       <WelcomePage
         onSelectPlayer={() => (window.location.hash = '#/player')}
         onSelectTrainer={() => (window.location.hash = '#/trainer')}
-        onSelectAdminRegister={() => (window.location.hash = '#/admin-register')}
       />
       <BookmarkPrompt />
     </div>

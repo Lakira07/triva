@@ -4,28 +4,25 @@ import {
   User,
   Plus,
   Trash2,
-  X,
   ChevronRight,
+  ChevronDown,
   Target,
   TrendingUp,
   Brain,
   Dumbbell,
   Heart,
-  ClipboardList,
   Calendar,
-  Clock,
-  Activity,
-  ArrowRight,
-  CheckCircle2,
 } from 'lucide-react';
 import {
   supabase,
   type Player,
   type DevelopmentGoal,
-  type Assessment,
   type TrainingSession,
   type TrainingCompletion,
   type DevelopmentArea,
+  type IupQuarterlyPlan,
+  type IupPlanStatus,
+  type SkillChecklistArea,
   AREA_LABELS,
 } from '@/lib/supabase';
 import AIInsightCard from '@/components/AIInsightCard';
@@ -39,10 +36,16 @@ const AREA_ICON_MAP: Record<DevelopmentArea, typeof Brain> = {
 
 interface PlayerDevData {
   goals: DevelopmentGoal[];
-  assessments: Assessment[];
   sessions: TrainingSession[];
   completions: TrainingCompletion[];
+  quarterlyPlans: IupQuarterlyPlan[];
 }
+
+const PLAN_STATUS_LABELS: Record<IupPlanStatus, string> = {
+  ej_paborjat: 'Ej påbörjad',
+  pagar: 'Pågår',
+  klart: 'Klar',
+};
 
 export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -50,7 +53,6 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [devData, setDevData] = useState<PlayerDevData | null>(null);
   const [showGoalForm, setShowGoalForm] = useState(false);
-  const [showAssessmentForm, setShowAssessmentForm] = useState(false);
 
   const fetchPlayers = useCallback(async () => {
     const { data, error } = await supabase
@@ -67,18 +69,23 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
   }, [teamId]);
 
   const fetchDevData = useCallback(async (playerId: string) => {
-    const [{ data: goals }, { data: assessments }, { data: sessions }, { data: completions }] = await Promise.all([
+    const [
+      { data: goals },
+      { data: sessions },
+      { data: completions },
+      { data: quarterlyPlans },
+    ] = await Promise.all([
       supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
-      supabase.from('assessments').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
       supabase.from('training_sessions').select('*').eq('team_id', teamId).order('scheduled_at', { ascending: false }),
       supabase.from('training_completions').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+      supabase.from('iup_quarterly_plans').select('*').eq('player_id', playerId).order('quarter', { ascending: true }),
     ]);
 
     setDevData({
       goals: (goals || []) as DevelopmentGoal[],
-      assessments: (assessments || []) as Assessment[],
       sessions: (sessions || []) as TrainingSession[],
       completions: (completions || []) as TrainingCompletion[],
+      quarterlyPlans: (quarterlyPlans || []) as IupQuarterlyPlan[],
     });
   }, [teamId]);
 
@@ -117,41 +124,29 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
     await fetchDevData(selectedPlayer!.id);
   };
 
-  const addAssessment = async (data: Partial<Assessment> & { area: DevelopmentArea }) => {
-    const areaAssessments = devData?.assessments.filter((a) => a.area === data.area) ?? [];
-    const nextNumber = areaAssessments.length + 1;
-    const { error } = await supabase.from('assessments').insert({
+  const saveQuarterlyPlan = async (goalId: string, data: Partial<IupQuarterlyPlan>): Promise<string | null> => {
+    const payload = {
+      goal_id: goalId,
       player_id: selectedPlayer!.id,
       team_id: teamId,
-      area: data.area,
-      assessment_number: nextNumber,
-      goal_id: data.goal_id || null,
-      football_action: data.football_action || null,
-      physical_quality: data.physical_quality || null,
-      psychological_focus: data.psychological_focus || null,
-      coach_observation: data.coach_observation || null,
-      coach_rating: data.coach_rating || null,
-      player_reflection: data.player_reflection || null,
-      training_done_summary: data.training_done_summary || null,
-      load_recovery_summary: data.load_recovery_summary || null,
-      feedback: data.feedback || null,
-      next_steps: data.next_steps || null,
-    });
-    if (error) {
-      console.error('Error adding assessment:', error);
-      return;
+      ...data,
+    };
+    try {
+      const { error } = await supabase.from('iup_quarterly_plans').upsert({
+        ...payload,
+        selected_skills: payload.selected_skills ?? {},
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'goal_id,quarter' });
+      if (error) {
+        console.error('Error saving quarterly plan:', error);
+        return error.message;
+      }
+      await fetchDevData(selectedPlayer!.id);
+      return null;
+    } catch (error) {
+      console.error('Error saving quarterly plan:', error);
+      return error instanceof Error ? error.message : 'Ett oväntat fel uppstod.';
     }
-    setShowAssessmentForm(false);
-    await fetchDevData(selectedPlayer!.id);
-  };
-
-  const deleteAssessment = async (id: string) => {
-    const { error } = await supabase.from('assessments').delete().eq('id', id);
-    if (error) {
-      console.error('Error deleting assessment:', error);
-      return;
-    }
-    await fetchDevData(selectedPlayer!.id);
   };
 
   if (loading) {
@@ -182,15 +177,10 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
         }}
         onAddGoal={() => setShowGoalForm(true)}
         onDeleteGoal={deleteGoal}
-        onAddAssessment={() => setShowAssessmentForm(true)}
-        onDeleteAssessment={deleteAssessment}
         showGoalForm={showGoalForm}
-        showAssessmentForm={showAssessmentForm}
         onAddGoalSubmit={addGoal}
-        onAddAssessmentSubmit={addAssessment}
         onCancelGoal={() => setShowGoalForm(false)}
-        onCancelAssessment={() => setShowAssessmentForm(false)}
-        goals={devData.goals}
+        onSaveQuarterlyPlan={saveQuarterlyPlan}
       />
     );
   }
@@ -230,35 +220,24 @@ function PlayerDetail({
   onBack,
   onAddGoal,
   onDeleteGoal,
-  onAddAssessment,
-  onDeleteAssessment,
   showGoalForm,
-  showAssessmentForm,
   onAddGoalSubmit,
-  onAddAssessmentSubmit,
   onCancelGoal,
-  onCancelAssessment,
-  goals,
+  onSaveQuarterlyPlan,
 }: {
   player: Player;
   devData: PlayerDevData;
   onBack: () => void;
   onAddGoal: () => void;
   onDeleteGoal: (id: string) => void;
-  onAddAssessment: () => void;
-  onDeleteAssessment: (id: string) => void;
   showGoalForm: boolean;
-  showAssessmentForm: boolean;
   onAddGoalSubmit: (data: { area: DevelopmentArea; football_action: string; target_description: string }) => void;
-  onAddAssessmentSubmit: (data: Partial<Assessment> & { area: DevelopmentArea }) => void;
   onCancelGoal: () => void;
-  onCancelAssessment: () => void;
-  goals: DevelopmentGoal[];
+  onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
 }) {
   const [selectedArea, setSelectedArea] = useState<DevelopmentArea>('teknik');
 
   const areaGoals = devData.goals.filter((g) => g.area === selectedArea);
-  const areaAssessments = devData.assessments.filter((a) => a.area === selectedArea);
   const playerCompletions = devData.completions;
   const playerSessions = devData.sessions.filter((s) =>
     playerCompletions.some((c) => c.session_id === s.id)
@@ -312,7 +291,7 @@ function PlayerDetail({
       <AIInsightCard
         title={`AI-analys av ${player.name}s utveckling`}
         context={buildPlayerDevContext(player, devData)}
-        prompt="Analysera spelarens utveckling baserat på mål, bedömningar och träningsdata. Vilka styrkor och utvecklingsområden ser du? Ge tre konkreta rekommendationer för nästa period. Svara på svenska, max 200 ord."
+        prompt="Analysera spelarens utveckling baserat på mål och träningsdata. Vilka styrkor och utvecklingsområden ser du? Ge tre konkreta rekommendationer för nästa period. Svara på svenska, max 200 ord."
       />
 
       {/* Area tabs */}
@@ -359,10 +338,10 @@ function PlayerDetail({
         {areaGoals.length === 0 && !showGoalForm ? (
           <p className="text-sm text-gray-400">Inga IUP-mål för detta område ännu.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {areaGoals.map((g) => (
               <div key={g.id} className="border border-gray-200 rounded-xl p-3">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex-1">
                     <p className="text-sm font-bold text-black">{g.target_description}</p>
                     {g.football_action && (
@@ -381,6 +360,12 @@ function PlayerDetail({
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+
+                <QuarterlyPlanCard
+                  goal={g}
+                  plans={devData.quarterlyPlans.filter((plan) => plan.goal_id === g.id)}
+                  onSaveQuarterlyPlan={onSaveQuarterlyPlan}
+                />
               </div>
             ))}
           </div>
@@ -409,79 +394,9 @@ function PlayerDetail({
               label="Belastning"
               value={`${totalActualLoad} AU (plan: ${totalPlannedLoad})`}
             />
-            <ChainConnector />
-            <ChainStep
-              label="Bedömningar"
-              value={`${areaAssessments.length} registrerade`}
-            />
           </div>
         </div>
       )}
-
-      {/* Assessments */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-bold text-black flex items-center gap-2">
-            <ClipboardList className="w-4 h-4" /> Bedömningar — {AREA_LABELS[selectedArea]}
-          </h4>
-          <button
-            onClick={onAddAssessment}
-            className="flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-black transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Ny bedömning
-          </button>
-        </div>
-
-        {showAssessmentForm && (
-          <AssessmentForm
-            area={selectedArea}
-            goals={areaGoals}
-            onSubmit={onAddAssessmentSubmit}
-            onCancel={onCancelAssessment}
-          />
-        )}
-
-        {areaAssessments.length === 0 && !showAssessmentForm ? (
-          <div className="text-center py-8">
-            <ClipboardList className="w-10 h-10 text-gray-200 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Ingen bedömning registrerad ännu.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {[...areaAssessments].reverse().map((a) => (
-              <div key={a.id} className="border border-gray-200 rounded-xl p-3">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">
-                      {a.assessment_number}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(a.created_at).toLocaleDateString('sv-SE')}
-                    </span>
-                    {a.coach_rating && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md font-bold">
-                        Betyg: {a.coach_rating}/5
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => onDeleteAssessment(a.id)}
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {a.coach_observation && <Field label="Observation" value={a.coach_observation} />}
-                {a.player_reflection && <Field label="Spelarens reflektion" value={a.player_reflection} />}
-                {a.training_done_summary && <Field label="Genomförd träning" value={a.training_done_summary} />}
-                {a.load_recovery_summary && <Field label="Belastning & återhämtning" value={a.load_recovery_summary} />}
-                {a.feedback && <Field label="Feedback" value={a.feedback} />}
-                {a.next_steps && <Field label="Nästa steg" value={a.next_steps} />}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Training history */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
@@ -518,6 +433,336 @@ function PlayerDetail({
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function QuarterlyPlanCard({
+  goal,
+  plans,
+  onSaveQuarterlyPlan,
+}: {
+  goal: DevelopmentGoal;
+  plans: IupQuarterlyPlan[];
+  onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
+}) {
+  const allPlans = Array.from({ length: 4 }, (_, index) => ({
+    quarter: index + 1,
+    current: plans.find((plan) => plan.quarter === index + 1),
+  }));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Årskalender och delmål</p>
+        <span className="text-xs text-gray-500">{goal.target_description}</span>
+      </div>
+
+      {allPlans.map(({ quarter, current }) => (
+        <QuarterPlanEditor
+          key={quarter}
+          goal={goal}
+          quarter={quarter}
+          plan={current}
+          onSaveQuarterlyPlan={onSaveQuarterlyPlan}
+        />
+      ))}
+    </div>
+  );
+}
+
+function QuarterPlanEditor({
+  goal,
+  quarter,
+  plan,
+  onSaveQuarterlyPlan,
+}: {
+  goal: DevelopmentGoal;
+  quarter: number;
+  plan?: IupQuarterlyPlan;
+  onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [focus, setFocus] = useState(plan?.focus ?? '');
+  const defaultStart = (quarter - 1) * 3 + 1;
+  const [startMonth, setStartMonth] = useState(plan?.start_month ?? defaultStart);
+  const [endMonth, setEndMonth] = useState(plan?.end_month ?? defaultStart + 2);
+  const [whatToDevelop, setWhatToDevelop] = useState(plan?.what_to_develop ?? '');
+  const [howToDevelop, setHowToDevelop] = useState(plan?.how_to_develop ?? '');
+  const [measurement, setMeasurement] = useState(plan?.measurement ?? '');
+  const [playerEvaluation, setPlayerEvaluation] = useState(plan?.player_evaluation ?? '');
+  const [coachEvaluation, setCoachEvaluation] = useState(plan?.coach_evaluation ?? '');
+  const [selectedSkills, setSelectedSkills] = useState(plan?.selected_skills ?? {});
+  const [status, setStatus] = useState<IupPlanStatus>(plan?.status ?? 'ej_paborjat');
+  const [saving, setSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (plan) {
+      setFocus(plan.focus);
+      setStartMonth(plan.start_month);
+      setEndMonth(plan.end_month);
+      setWhatToDevelop(plan.what_to_develop ?? '');
+      setHowToDevelop(plan.how_to_develop ?? '');
+      setMeasurement(plan.measurement ?? '');
+      setPlayerEvaluation(plan.player_evaluation ?? '');
+      setCoachEvaluation(plan.coach_evaluation ?? '');
+      setSelectedSkills(plan.selected_skills ?? {});
+      setStatus(plan.status);
+    }
+  }, [plan]);
+
+  const monthOptions = Array.from({ length: 12 }, (_, index) => index + 1);
+  const monthLabels = [
+    'Januari', 'Februari', 'Mars', 'April', 'Maj', 'Juni',
+    'Juli', 'Augusti', 'September', 'Oktober', 'November', 'December',
+  ];
+  const monthSpan = `${monthLabels[startMonth - 1]}–${monthLabels[endMonth - 1]}`;
+
+  const handleStartMonthChange = (value: number) => {
+    setStartMonth(value);
+    setEndMonth((current) => Math.max(value, current));
+  };
+
+  const handleEndMonthChange = (value: number) => {
+    setEndMonth(value);
+    setStartMonth((current) => Math.min(value, current));
+  };
+
+  const handleSave = async () => {
+    if (startMonth > endMonth || saving) return;
+
+    setSaving(true);
+    setSaveFeedback(null);
+    const error = await onSaveQuarterlyPlan(goal.id, {
+      quarter,
+      focus: focus.trim() || `Kvartal ${quarter}`,
+      start_month: startMonth,
+      end_month: endMonth,
+      what_to_develop: whatToDevelop.trim() || null,
+      how_to_develop: howToDevelop.trim() || null,
+      measurement: measurement.trim() || null,
+      player_evaluation: playerEvaluation.trim() || null,
+      coach_evaluation: coachEvaluation.trim() || null,
+      selected_skills: selectedSkills,
+      status,
+    });
+    setSaving(false);
+    setSaveFeedback(error
+      ? { type: 'error', message: `Kunde inte spara: ${error}` }
+      : { type: 'success', message: 'Kvartalet har sparats.' });
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="w-full min-h-14 flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="min-w-0 flex items-center gap-3">
+          <span className="font-bold text-sm text-black">Kvartal {quarter}</span>
+          <span className="truncate text-xs text-gray-500">{monthSpan}</span>
+        </span>
+        <span className="flex flex-shrink-0 items-center gap-2">
+          <span className={`rounded-md px-2 py-1 text-xs font-bold ${
+            plan?.status === 'klart'
+              ? 'bg-green-50 text-green-700'
+              : plan?.status === 'pagar'
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-gray-100 text-gray-500'
+          }`}>
+            {plan ? PLAN_STATUS_LABELS[plan.status] : 'Ej sparat'}
+          </span>
+          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-200 p-4 space-y-4 bg-gray-50/60">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Fokus för kvartalet" value={focus} onChange={setFocus} placeholder="Exempel: Mottagning med insidan" />
+            <FormField label="Vad ska spelaren utveckla?" value={whatToDevelop} onChange={setWhatToDevelop} placeholder="Beskriv utvecklingsmålet" textarea />
+            <FormField label="Hur ska den utvecklas?" value={howToDevelop} onChange={setHowToDevelop} placeholder="Vilka aktiviteter och träningstillfällen?" textarea />
+            <FormField label="Mätning" value={measurement} onChange={setMeasurement} placeholder="Hur mäts framsteg?" textarea />
+          </div>
+
+          <div className="max-w-xs">
+            <label className="block text-xs font-bold text-gray-500 mb-1">Status</label>
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value as IupPlanStatus)}
+              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+            >
+              {Object.entries(PLAN_STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Spelarens utvärdering" value={playerEvaluation} onChange={setPlayerEvaluation} placeholder="Hur har spelaren upplevt utvecklingen?" textarea />
+            <FormField label="Tränarens utvärdering" value={coachEvaluation} onChange={setCoachEvaluation} placeholder="Tränarens uppföljning och feedback" textarea />
+          </div>
+
+          <div className="border-t border-gray-200 pt-4">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-1">
+              <p className="text-sm font-bold text-gray-700">Månadsspann</p>
+              <p className="text-xs text-gray-500">{monthSpan}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={startMonth}
+                onChange={(event) => handleStartMonthChange(Number(event.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+              >
+                {monthOptions.map((month) => <option key={month} value={month}>Från {monthLabels[month - 1]}</option>)}
+              </select>
+              <select
+                value={endMonth}
+                onChange={(event) => handleEndMonthChange(Number(event.target.value))}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+              >
+                {monthOptions.map((month) => <option key={month} value={month}>Till {monthLabels[month - 1]}</option>)}
+              </select>
+            </div>
+
+            <div className="mt-4">
+              <SkillChecklist
+                area={goal.area}
+                selectedSkills={selectedSkills}
+                onChange={setSelectedSkills}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-3">
+            {saveFeedback && (
+              <p
+                role={saveFeedback.type === 'error' ? 'alert' : 'status'}
+                className={`mr-auto text-sm font-semibold ${saveFeedback.type === 'error' ? 'text-red-700' : 'text-green-700'}`}
+              >
+                {saveFeedback.message}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex min-w-36 items-center justify-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors disabled:cursor-wait disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Sparar...' : 'Spara kvartal'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillChecklist({
+  area,
+  selectedSkills,
+  onChange,
+}: {
+  area: DevelopmentArea;
+  selectedSkills: Partial<Record<SkillChecklistArea, string[]>>;
+  onChange: (skills: Partial<Record<SkillChecklistArea, string[]>>) => void;
+}) {
+  const skillAreaMap: Record<DevelopmentArea, SkillChecklistArea> = {
+    teknik: 'teknik',
+    spelförståelse: 'spelforstaelse',
+    fysik: 'fysik',
+    psykologi: 'psykologiska',
+  };
+
+  const checklistAreas: Array<{ key: SkillChecklistArea; label: string; skills: string[] }> = [
+    {
+      key: 'psykologiska',
+      label: 'Psykologiska färdigheter',
+      skills: [
+        'Göra sitt bästa',
+        'Jämföra sig med sig själv',
+        'Ge positiv feedback',
+        'Ta emot positiv feedback',
+        'Ta emot instruktioner',
+        'Ta emot feedback',
+        'Fortsätta köra när det går dåligt',
+        'Ge instruktioner',
+        'Ge feedback',
+      ],
+    },
+    {
+      key: 'spelforstaelse',
+      label: 'Spelförståelse',
+      skills: [
+        'Spelbarhet', 'Spelavstånd', 'Spelbredd', 'Speldjup', 'Uppflyttning', 'Djupledsspel', 'Offensiv omställning', 'Fasta situationer offensivt',
+        'Defensiv omställning', 'Direkt återerövring', 'Indirekt återerövring', 'Täckning', 'Överflyttning – centrering', 'Uppflyttning – falla', 'Försvarssida', 'Fasta situationer defensivt',
+        'Speluppbyggnad', 'Komma till avslut och göra mål', 'Kontring', 'Förhindra speluppbyggnad', 'Återerövring', 'Förhindra och rädda avslut',
+        '2 skeden efter varandra', '3 skeden efter varandra', '4 eller fler skeden efter varandra',
+      ],
+    },
+    {
+      key: 'teknik',
+      label: 'Tekniska färdigheter',
+      skills: [
+        'Mottag – felvänd', 'Mottag – sidled', 'Mottag – rakt fram', 'Mottag – få bollen att stanna',
+        'Nick – försvarsnick – bort', 'Nick – försvarsnick – passning', 'Nick – anfallsnick – avslut', 'Nick – anfallsnick – passning',
+        'Täcka bollen – driver bollen', 'Täcka bollen – felvänd', 'Täcka bollen – vid passning', 'Täcka bollen – vid avslut',
+        'Passning kort – en touch', 'Passning kort – två touch', 'Passning lång – en touch', 'Passning lång – två touch',
+        'Skott – ett tillslag', 'Skott – två tillslag', 'Skott – helvolley', 'Skott – halvvolley', 'Skott – med fart', 'Skott – utsida', 'Skott – insida', 'Skott – vrist',
+        'Driva / ta fram bollen – framåt', 'Driva / ta fram bollen – med riktningsförändring',
+        'Tackling', 'Brytning', 'Skarva', 'Markering', 'Vända', 'Utmana, finta & dribbla', 'Press',
+      ],
+    },
+    {
+      key: 'fysik',
+      label: 'Fysiska färdigheter',
+      skills: ['Koordination', 'Styrka', 'Explosivitet', 'Snabbhet', 'Rörlighet', 'Uthållighet'],
+    },
+  ];
+
+  const toggleSkill = (area: SkillChecklistArea, skill: string) => {
+    const nextSkills = new Set(selectedSkills[area] ?? []);
+    if (nextSkills.has(skill)) {
+      nextSkills.delete(skill);
+    } else {
+      nextSkills.add(skill);
+    }
+    onChange({
+      ...selectedSkills,
+      [area]: Array.from(nextSkills),
+    });
+  };
+
+  const activeArea = skillAreaMap[area];
+  const activeChecklist = checklistAreas.find((item) => item.key === activeArea)!;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Färdighetslista</p>
+      <div className="border border-gray-200 rounded-xl p-3">
+        <h4 className="text-sm font-bold text-black mb-2">{activeChecklist.label}</h4>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {activeChecklist.skills.map((skill) => {
+            const checked = selectedSkills[activeChecklist.key]?.includes(skill) ?? false;
+            return (
+              <label key={skill} className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleSkill(activeChecklist.key, skill)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
+                />
+                <span>{skill}</span>
+              </label>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -601,129 +846,6 @@ function GoalForm({
   );
 }
 
-function AssessmentForm({
-  area,
-  goals,
-  onSubmit,
-  onCancel,
-}: {
-  area: DevelopmentArea;
-  goals: DevelopmentGoal[];
-  onSubmit: (data: Partial<Assessment> & { area: DevelopmentArea }) => void;
-  onCancel: () => void;
-}) {
-  const [goalId, setGoalId] = useState('');
-  const [footballAction, setFootballAction] = useState('');
-  const [physicalQuality, setPhysicalQuality] = useState('');
-  const [psychFocus, setPsychFocus] = useState('');
-  const [observation, setObservation] = useState('');
-  const [rating, setRating] = useState('');
-  const [reflection, setReflection] = useState('');
-  const [trainingDone, setTrainingDone] = useState('');
-  const [loadRecovery, setLoadRecovery] = useState('');
-  const [feedback, setFeedback] = useState('');
-  const [nextSteps, setNextSteps] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    await onSubmit({
-      area,
-      goal_id: goalId || null,
-      football_action: footballAction.trim() || null,
-      physical_quality: physicalQuality.trim() || null,
-      psychological_focus: psychFocus.trim() || null,
-      coach_observation: observation.trim() || null,
-      coach_rating: rating ? parseInt(rating) : null,
-      player_reflection: reflection.trim() || null,
-      training_done_summary: trainingDone.trim() || null,
-      load_recovery_summary: loadRecovery.trim() || null,
-      feedback: feedback.trim() || null,
-      next_steps: nextSteps.trim() || null,
-    });
-    setSaving(false);
-  };
-
-  const showField = (field: string) => {
-    if (area === 'fysik') return ['physicalQuality', 'observation', 'rating', 'trainingDone', 'feedback', 'nextSteps'].includes(field);
-    if (area === 'psykologi') return ['psychFocus', 'observation', 'rating', 'reflection', 'trainingDone', 'feedback', 'nextSteps'].includes(field);
-    return ['footballAction', 'observation', 'rating', 'reflection', 'trainingDone', 'feedback', 'nextSteps'].includes(field);
-  };
-
-  return (
-    <div className="border-2 border-gray-200 rounded-xl p-3 mb-3">
-      <div className="space-y-3">
-        {goals.length > 0 && (
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">Koppla till IUP-mål</label>
-            <select
-              value={goalId}
-              onChange={(e) => setGoalId(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-            >
-              <option value="">Inget mål</option>
-              {goals.map((g) => (
-                <option key={g.id} value={g.id}>{g.target_description.slice(0, 50)}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {showField('footballAction') && (
-          <FormField label="Konkret fotbollsaktion" value={footballAction} onChange={setFootballAction} placeholder="T.ex. Mottagning och vrid" />
-        )}
-        {showField('physicalQuality') && (
-          <FormField label="Fysisk egenskap" value={physicalQuality} onChange={setPhysicalQuality} placeholder="T.ex. Explosivitet" />
-        )}
-        {showField('psychFocus') && (
-          <FormField label="Psykologiskt fokus" value={psychFocus} onChange={setPsychFocus} placeholder="T.ex. Koncentration under press" />
-        )}
-
-        <FormField label="Tränarens observation" value={observation} onChange={setObservation} placeholder="Vad ser du som tränare?" textarea />
-
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1">Bedömning (1–5)</label>
-          <div className="flex gap-1.5">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                onClick={() => setRating(String(n))}
-                className={`w-9 h-9 rounded-lg border-2 text-sm font-bold transition-colors ${
-                  rating === String(n) ? 'border-black bg-black text-white' : 'border-gray-200 text-gray-500 hover:border-gray-400'
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {showField('reflection') && (
-          <FormField label="Spelarens reflektion" value={reflection} onChange={setReflection} placeholder="Hur upplever spelaren sin utveckling?" textarea />
-        )}
-        <FormField label="Genomförd träning" value={trainingDone} onChange={setTrainingDone} placeholder="Vad har spelaren arbetat med?" textarea />
-        <FormField label="Belastning & återhämtning" value={loadRecovery} onChange={setLoadRecovery} placeholder="Hur har spelaren hanterat perioden?" textarea />
-        <FormField label="Feedback" value={feedback} onChange={setFeedback} placeholder="Din feedback till spelaren" textarea />
-        <FormField label="Nästa steg" value={nextSteps} onChange={setNextSteps} placeholder="Vad ska spelaren fokusera på framåt?" textarea />
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="flex items-center gap-1 bg-black hover:bg-gray-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-bold"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-            Spara bedömning
-          </button>
-          <button onClick={onCancel} className="text-gray-500 hover:text-black px-3 py-1.5 rounded-lg text-xs font-bold">
-            Avbryt
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function FormField({
   label,
   value,
@@ -770,15 +892,6 @@ function StatBox({ label, value, sub, highlight }: { label: string; value: strin
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="mb-1.5">
-      <p className="text-xs font-bold text-gray-400">{label}</p>
-      <p className="text-sm text-gray-700 mt-0.5">{value}</p>
-    </div>
-  );
-}
-
 function ChainStep({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
@@ -800,16 +913,6 @@ function buildPlayerDevContext(player: Player, devData: PlayerDevData): string {
     `- ${AREA_LABELS[g.area]}: ${g.target_description}${g.football_action ? ` (aktion: ${g.football_action})` : ''}${g.is_active ? ' [aktivt]' : ' [avslutat]'}`
   ).join('\n');
 
-  const assessmentLines = devData.assessments.map((a) => {
-    const parts: string[] = [`[${AREA_LABELS[a.area]}] bedömning #${a.assessment_number}`];
-    if (a.coach_rating) parts.push(`betyg ${a.coach_rating}/5`);
-    if (a.coach_observation) parts.push(`observation: ${a.coach_observation}`);
-    if (a.player_reflection) parts.push(`spelarreflektion: ${a.player_reflection}`);
-    if (a.feedback) parts.push(`feedback: ${a.feedback}`);
-    if (a.next_steps) parts.push(`nästa steg: ${a.next_steps}`);
-    return `- ${parts.join(', ')}`;
-  }).join('\n');
-
   const sessionLines = devData.sessions.map((s) => {
     const comp = devData.completions.find((c) => c.session_id === s.id);
     return `- ${s.title} (${new Date(s.scheduled_at).toLocaleDateString('sv-SE')}): planerad ${s.planned_duration_min}min RPE ${s.planned_rpe}${comp ? `, faktisk ${comp.actual_duration_min ?? '?'}min RPE ${comp.player_rpe ?? '?'}${comp.has_pain ? ', känning' : ''}` : ', ej genomförd'}`;
@@ -821,9 +924,6 @@ Spelare: ${player.name}${player.position ? `, position: ${player.position}` : ''
 
 IUP-mål:
 ${goalLines || 'Inga mål registrerade'}
-
-Bedömningar:
-${assessmentLines || 'Inga bedömningar registrerade'}
 
 Träningspass:
 ${sessionLines || 'Inga pass registrerade'}

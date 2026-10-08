@@ -15,10 +15,9 @@ import { supabase } from '@/lib/supabase';
 interface WelcomePageProps {
   onSelectPlayer: () => void;
   onSelectTrainer: () => void;
-  onSelectAdminRegister: () => void;
 }
 
-export default function WelcomePage({ onSelectPlayer, onSelectTrainer, onSelectAdminRegister }: WelcomePageProps) {
+export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: WelcomePageProps) {
   const [stats, setStats] = useState<{ players: number | null; teams: number | null }>({
     players: null,
     teams: null,
@@ -170,7 +169,6 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer, onSelectA
             <div className="flex flex-col gap-2 sm:flex-row">
               <button onClick={onSelectPlayer} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 px-4 py-3 text-sm font-bold transition-colors hover:bg-white/10"><User className="h-4 w-4" /> Spelarportal</button>
               <button onClick={onSelectTrainer} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#171717] transition-transform hover:-translate-y-0.5"><Users className="h-4 w-4" /> Tränarportal</button>
-              <button onClick={onSelectAdminRegister} className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#ef5b3f] bg-[#ef5b3f] px-4 py-3 text-sm font-bold text-white transition-transform hover:-translate-y-0.5"><Shield className="h-4 w-4" /> Skapa administratör</button>
             </div>
           </div>
         </section>

@@ -120,6 +120,30 @@ export interface DevelopmentGoal {
   updated_at: string;
 }
 
+export type IupPlanStatus = 'ej_paborjat' | 'pagar' | 'klart';
+
+export interface IupQuarterlyPlan {
+  id: string;
+  goal_id: string;
+  player_id: string;
+  team_id: string;
+  quarter: number;
+  focus: string;
+  start_month: number;
+  end_month: number;
+  what_to_develop: string | null;
+  how_to_develop: string | null;
+  measurement: string | null;
+  player_evaluation: string | null;
+  coach_evaluation: string | null;
+  selected_skills: Partial<Record<SkillChecklistArea, string[]>>;
+  status: IupPlanStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SkillChecklistArea = 'psykologiska' | 'spelforstaelse' | 'teknik' | 'fysik';
+
 export type SessionType = 'lag' | 'grupp' | 'individuell';
 
 export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
