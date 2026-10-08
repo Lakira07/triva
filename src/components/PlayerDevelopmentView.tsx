@@ -21,11 +21,13 @@ import {
   type TrainingCompletion,
   type DevelopmentArea,
   type IupQuarterlyPlan,
+  type IupQuarterlyPlanChange,
   type IupPlanStatus,
   type SkillChecklistArea,
   AREA_LABELS,
 } from '@/lib/supabase';
 import AIInsightCard from '@/components/AIInsightCard';
+import IupChangeHistory from '@/components/IupChangeHistory';
 
 const AREA_ICON_MAP: Record<DevelopmentArea, typeof Brain> = {
   teknik: Brain,
@@ -39,6 +41,7 @@ interface PlayerDevData {
   sessions: TrainingSession[];
   completions: TrainingCompletion[];
   quarterlyPlans: IupQuarterlyPlan[];
+  quarterlyPlanChanges: IupQuarterlyPlanChange[];
 }
 
 const PLAN_STATUS_LABELS: Record<IupPlanStatus, string> = {
@@ -74,11 +77,13 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
       { data: sessions },
       { data: completions },
       { data: quarterlyPlans },
+      { data: quarterlyPlanChanges },
     ] = await Promise.all([
       supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
       supabase.from('training_sessions').select('*').eq('team_id', teamId).order('scheduled_at', { ascending: false }),
       supabase.from('training_completions').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
       supabase.from('iup_quarterly_plans').select('*').eq('player_id', playerId).order('quarter', { ascending: true }),
+      supabase.from('iup_quarterly_plan_changes').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
     ]);
 
     setDevData({
@@ -86,6 +91,7 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
       sessions: (sessions || []) as TrainingSession[],
       completions: (completions || []) as TrainingCompletion[],
       quarterlyPlans: (quarterlyPlans || []) as IupQuarterlyPlan[],
+      quarterlyPlanChanges: (quarterlyPlanChanges || []) as IupQuarterlyPlanChange[],
     });
   }, [teamId]);
 
@@ -135,6 +141,7 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
       const { error } = await supabase.from('iup_quarterly_plans').upsert({
         ...payload,
         selected_skills: payload.selected_skills ?? {},
+        updated_by: 'coach',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'goal_id,quarter' });
       if (error) {
@@ -364,6 +371,7 @@ function PlayerDetail({
                 <QuarterlyPlanCard
                   goal={g}
                   plans={devData.quarterlyPlans.filter((plan) => plan.goal_id === g.id)}
+                  planChanges={devData.quarterlyPlanChanges.filter((change) => change.goal_id === g.id)}
                   onSaveQuarterlyPlan={onSaveQuarterlyPlan}
                 />
               </div>
@@ -441,10 +449,12 @@ function PlayerDetail({
 function QuarterlyPlanCard({
   goal,
   plans,
+  planChanges,
   onSaveQuarterlyPlan,
 }: {
   goal: DevelopmentGoal;
   plans: IupQuarterlyPlan[];
+  planChanges: IupQuarterlyPlanChange[];
   onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
 }) {
   const allPlans = Array.from({ length: 4 }, (_, index) => ({
@@ -465,6 +475,7 @@ function QuarterlyPlanCard({
           goal={goal}
           quarter={quarter}
           plan={current}
+          planChanges={planChanges.filter((change) => change.plan_id === current?.id)}
           onSaveQuarterlyPlan={onSaveQuarterlyPlan}
         />
       ))}
@@ -476,11 +487,13 @@ function QuarterPlanEditor({
   goal,
   quarter,
   plan,
+  planChanges,
   onSaveQuarterlyPlan,
 }: {
   goal: DevelopmentGoal;
   quarter: number;
   plan?: IupQuarterlyPlan;
+  planChanges: IupQuarterlyPlanChange[];
   onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -491,7 +504,6 @@ function QuarterPlanEditor({
   const [whatToDevelop, setWhatToDevelop] = useState(plan?.what_to_develop ?? '');
   const [howToDevelop, setHowToDevelop] = useState(plan?.how_to_develop ?? '');
   const [measurement, setMeasurement] = useState(plan?.measurement ?? '');
-  const [playerEvaluation, setPlayerEvaluation] = useState(plan?.player_evaluation ?? '');
   const [coachEvaluation, setCoachEvaluation] = useState(plan?.coach_evaluation ?? '');
   const [selectedSkills, setSelectedSkills] = useState(plan?.selected_skills ?? {});
   const [status, setStatus] = useState<IupPlanStatus>(plan?.status ?? 'ej_paborjat');
@@ -506,7 +518,6 @@ function QuarterPlanEditor({
       setWhatToDevelop(plan.what_to_develop ?? '');
       setHowToDevelop(plan.how_to_develop ?? '');
       setMeasurement(plan.measurement ?? '');
-      setPlayerEvaluation(plan.player_evaluation ?? '');
       setCoachEvaluation(plan.coach_evaluation ?? '');
       setSelectedSkills(plan.selected_skills ?? {});
       setStatus(plan.status);
@@ -543,7 +554,6 @@ function QuarterPlanEditor({
       what_to_develop: whatToDevelop.trim() || null,
       how_to_develop: howToDevelop.trim() || null,
       measurement: measurement.trim() || null,
-      player_evaluation: playerEvaluation.trim() || null,
       coach_evaluation: coachEvaluation.trim() || null,
       selected_skills: selectedSkills,
       status,
@@ -603,8 +613,18 @@ function QuarterPlanEditor({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Spelarens utvärdering" value={playerEvaluation} onChange={setPlayerEvaluation} placeholder="Hur har spelaren upplevt utvecklingen?" textarea />
+            <div className="rounded-lg border border-[#d7e3d9] bg-white p-3">
+              <p className="text-xs font-bold text-[#557461]">Spelarens eget mål</p>
+              <p className="mt-1 text-sm text-gray-700">{plan?.player_goal || 'Spelaren har inte fyllt i ett eget mål ännu.'}</p>
+              <p className="mt-3 text-xs font-bold text-[#557461]">Spelarens utvärdering</p>
+              <p className="mt-1 text-sm text-gray-700">{plan?.player_evaluation || 'Spelaren har inte skrivit någon reflektion ännu.'}</p>
+            </div>
             <FormField label="Tränarens utvärdering" value={coachEvaluation} onChange={setCoachEvaluation} placeholder="Tränarens uppföljning och feedback" textarea />
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Ändringshistorik</p>
+            <IupChangeHistory changes={planChanges} />
           </div>
 
           <div className="border-t border-gray-200 pt-4">
@@ -664,7 +684,7 @@ function QuarterPlanEditor({
   );
 }
 
-function SkillChecklist({
+export function SkillChecklist({
   area,
   selectedSkills,
   onChange,

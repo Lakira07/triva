@@ -134,12 +134,25 @@ export interface IupQuarterlyPlan {
   what_to_develop: string | null;
   how_to_develop: string | null;
   measurement: string | null;
+  player_goal: string | null;
   player_evaluation: string | null;
   coach_evaluation: string | null;
   selected_skills: Partial<Record<SkillChecklistArea, string[]>>;
   status: IupPlanStatus;
+  updated_by: 'coach' | 'player';
   created_at: string;
   updated_at: string;
+}
+
+export interface IupQuarterlyPlanChange {
+  id: string;
+  plan_id: string;
+  goal_id: string;
+  player_id: string;
+  team_id: string;
+  actor: 'coach' | 'player';
+  changes: Record<string, { from?: unknown; to?: unknown } | unknown>;
+  created_at: string;
 }
 
 export type SkillChecklistArea = 'psykologiska' | 'spelforstaelse' | 'teknik' | 'fysik';

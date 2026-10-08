@@ -21,7 +21,9 @@ import {
   CalendarDays,
   BarChart3,
 } from 'lucide-react';
-import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type TrainingAssignment, type DevelopmentArea, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
+import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type TrainingAssignment, type DevelopmentArea, type IupQuarterlyPlan, type IupQuarterlyPlanChange, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
+import IupChangeHistory from '@/components/IupChangeHistory';
+import { SkillChecklist } from '@/components/PlayerDevelopmentView';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -380,19 +382,34 @@ export default function PlayerPortal() {
 function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: string }) {
   const [goals, setGoals] = useState<DevelopmentGoal[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [quarterlyPlans, setQuarterlyPlans] = useState<IupQuarterlyPlan[]>([]);
+  const [planChanges, setPlanChanges] = useState<IupQuarterlyPlanChange[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const refreshIup = useCallback(async () => {
+    const [
+      { data: gData },
+      { data: aData },
+      { data: pData },
+      { data: cData },
+    ] = await Promise.all([
+      supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
+      supabase.from('assessments').select('*').eq('player_id', playerId).eq('team_id', teamId).order('created_at', { ascending: false }),
+      supabase.from('iup_quarterly_plans').select('*').eq('player_id', playerId).eq('team_id', teamId).order('quarter', { ascending: true }),
+      supabase.from('iup_quarterly_plan_changes').select('*').eq('player_id', playerId).eq('team_id', teamId).order('created_at', { ascending: false }),
+    ]);
+    setGoals((gData || []) as DevelopmentGoal[]);
+    setAssessments((aData || []) as Assessment[]);
+    setQuarterlyPlans((pData || []) as IupQuarterlyPlan[]);
+    setPlanChanges((cData || []) as IupQuarterlyPlanChange[]);
+  }, [playerId, teamId]);
 
   useEffect(() => {
     (async () => {
-      const [{ data: gData }, { data: aData }] = await Promise.all([
-        supabase.from('development_goals').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
-        supabase.from('assessments').select('*').eq('player_id', playerId).order('created_at', { ascending: false }),
-      ]);
-      setGoals((gData || []) as DevelopmentGoal[]);
-      setAssessments((aData || []) as Assessment[]);
+      await refreshIup();
       setLoading(false);
     })();
-  }, [playerId]);
+  }, [refreshIup]);
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
 
@@ -400,11 +417,11 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
 
   return (
     <div className="max-w-3xl">
-      <SectionHeading icon={<Target className="w-5 h-5" />} eyebrow="Min IUP" title="Din personliga utvecklingskarta" description="Här samlas karriärmål, utvecklingsområden och konkreta fotbollsaktioner. Be tränaren lägga in din plan så kan ni följa arbetet tillsammans." />
+      <SectionHeading icon={<Target className="w-5 h-5" />} eyebrow="Min IUP" title="Din personliga utvecklingskarta" description="Följ tränarens plan, lägg till dina egna mål och se vad ni båda har ändrat." />
       {goals.length === 0 ? (
         <div className="mt-6 rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8">
           <p className="text-sm font-semibold text-gray-700">Ingen plan upplagd ännu</p>
-          <p className="mt-1 text-sm leading-6 text-gray-500">När tränaren lägger in dina mål visas de här tillsammans med bedömningar och framsteg.</p>
+          <p className="mt-1 text-sm leading-6 text-gray-500">När tränaren lägger in dina mål kan du komplettera dem med egna delmål och reflektioner.</p>
         </div>
       ) : (
         <div className="mt-5 space-y-3">
@@ -413,13 +430,39 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
             const areaAssessments = assessments.filter((a) => a.area === area);
             if (areaGoals.length === 0 && areaAssessments.length === 0) return null;
             return (
-              <div key={area} className="rounded-xl border border-gray-200 bg-white p-5">
-                <p className="font-bold text-gray-900">{AREA_LABELS[area]}</p>
+              <div key={area} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                  <span className="h-7 w-1 rounded-full bg-[#315c43]" />
+                  <p className="text-base font-extrabold text-gray-950">{AREA_LABELS[area]}</p>
+                </div>
                 {areaGoals.map((g) => (
-                  <div key={g.id} className="mt-3 border-l-2 border-[#315c43] pl-3">
-                    <p className="text-sm font-semibold text-gray-800">{g.target_description}</p>
-                    {g.football_action && <p className="text-xs text-gray-500 mt-0.5">Fotbollsaktion: {g.football_action}</p>}
-                    <span className={`inline-block text-xs px-2 py-0.5 rounded-md mt-1.5 font-bold ${g.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{g.is_active ? 'Aktivt' : 'Avslutat'}</span>
+                  <div key={g.id} className="mt-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-[#f2f6f1] p-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-[#557461]">Övergripande mål</p>
+                        <p className="mt-1 text-base font-bold leading-6 text-gray-950">{g.target_description}</p>
+                        {g.football_action && <p className="mt-1 text-sm text-gray-600">Fotbollsaktion: {g.football_action}</p>}
+                      </div>
+                      <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${g.is_active ? 'bg-white text-[#315c43]' : 'bg-gray-200 text-gray-600'}`}>{g.is_active ? 'Aktivt' : 'Avslutat'}</span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {Array.from({ length: 4 }, (_, index) => {
+                        const quarter = index + 1;
+                        const plan = quarterlyPlans.find((item) => item.goal_id === g.id && item.quarter === quarter);
+                        return (
+                          <PlayerQuarterContribution
+                            key={quarter}
+                            goal={g}
+                            quarter={quarter}
+                            plan={plan}
+                            changes={planChanges.filter((change) => change.goal_id === g.id && change.plan_id === plan?.id)}
+                            playerId={playerId}
+                            teamId={teamId}
+                            onSaved={refreshIup}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
                 {areaAssessments.length > 0 && (
@@ -444,6 +487,221 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
         </div>
       )}
     </div>
+  );
+}
+
+function PlayerQuarterContribution({
+  goal,
+  quarter,
+  plan,
+  changes,
+  playerId,
+  teamId,
+  onSaved,
+}: {
+  goal: DevelopmentGoal;
+  quarter: number;
+  plan?: IupQuarterlyPlan;
+  changes: IupQuarterlyPlanChange[];
+  playerId: string;
+  teamId: string;
+  onSaved: () => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [playerGoal, setPlayerGoal] = useState(plan?.player_goal ?? '');
+  const [playerEvaluation, setPlayerEvaluation] = useState(plan?.player_evaluation ?? '');
+  const [focus, setFocus] = useState(plan?.focus ?? `Kvartal ${quarter}`);
+  const [whatToDevelop, setWhatToDevelop] = useState(plan?.what_to_develop ?? '');
+  const [howToDevelop, setHowToDevelop] = useState(plan?.how_to_develop ?? '');
+  const [measurement, setMeasurement] = useState(plan?.measurement ?? '');
+  const [startMonth, setStartMonth] = useState(plan?.start_month ?? (quarter - 1) * 3 + 1);
+  const [endMonth, setEndMonth] = useState(plan?.end_month ?? quarter * 3);
+  const [status, setStatus] = useState<IupQuarterlyPlan['status']>(plan?.status ?? 'ej_paborjat');
+  const [selectedSkills, setSelectedSkills] = useState(plan?.selected_skills ?? {});
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPlayerGoal(plan?.player_goal ?? '');
+    setPlayerEvaluation(plan?.player_evaluation ?? '');
+    setFocus(plan?.focus ?? `Kvartal ${quarter}`);
+    setWhatToDevelop(plan?.what_to_develop ?? '');
+    setHowToDevelop(plan?.how_to_develop ?? '');
+    setMeasurement(plan?.measurement ?? '');
+    setStartMonth(plan?.start_month ?? (quarter - 1) * 3 + 1);
+    setEndMonth(plan?.end_month ?? quarter * 3);
+    setStatus(plan?.status ?? 'ej_paborjat');
+    setSelectedSkills(plan?.selected_skills ?? {});
+  }, [plan, quarter]);
+
+  const monthLabels = ['Januari', 'Februari', 'Mars', 'April', 'Maj', 'Juni', 'Juli', 'Augusti', 'September', 'Oktober', 'November', 'December'];
+  const statusLabel = status === 'klart' ? 'Klar' : status === 'pagar' ? 'Pågår' : 'Ej påbörjad';
+  const statusStyle = status === 'klart' ? 'bg-[#c8e0c8] text-[#173b25]' : status === 'pagar' ? 'bg-[#d5e8ce] text-[#173b25]' : 'bg-white/15 text-white';
+
+  const saveContribution = async () => {
+    if (saving) return;
+    setSaving(true);
+    setFeedback(null);
+
+    const playerFields = {
+      focus: focus.trim() || `Kvartal ${quarter}`,
+      start_month: startMonth,
+      end_month: endMonth,
+      what_to_develop: whatToDevelop.trim() || null,
+      how_to_develop: howToDevelop.trim() || null,
+      measurement: measurement.trim() || null,
+      status,
+      selected_skills: selectedSkills,
+      player_goal: playerGoal.trim() || null,
+      player_evaluation: playerEvaluation.trim() || null,
+      updated_by: 'player' as const,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = plan
+      ? await supabase.from('iup_quarterly_plans').update(playerFields).eq('id', plan.id)
+      : await supabase.from('iup_quarterly_plans').insert({
+          goal_id: goal.id,
+          player_id: playerId,
+          team_id: teamId,
+          quarter,
+          coach_evaluation: null,
+          ...playerFields,
+        });
+    if (error) {
+      setFeedback(`Kunde inte spara: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    await onSaved();
+    setFeedback('Dina ändringar har sparats.');
+    setSaving(false);
+  };
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={expanded}
+        className="flex min-h-[68px] w-full items-center justify-between gap-3 bg-[#234633] px-4 py-3 text-left text-white transition-colors hover:bg-[#183525] sm:px-5"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-lg font-extrabold">{quarter}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-extrabold">Kvartal {quarter}</span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-green-50/75">{monthLabels[startMonth - 1]}–{monthLabels[endMonth - 1]}</span>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${statusStyle}`}>{statusLabel}</span>
+          <ChevronRight className={`h-4 w-4 text-green-50 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="space-y-5 border-t border-gray-200 bg-[#f7f9f6] p-4 sm:p-5">
+          <div className="space-y-4">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#557461]">Plan för kvartalet</p>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Fokus för kvartalet</span>
+              <input value={focus} onChange={(event) => setFocus(event.target.value)} placeholder="Exempel: Mottagning med insidan" className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Vad ska spelaren utveckla?</span>
+              <textarea value={whatToDevelop} onChange={(event) => setWhatToDevelop(event.target.value)} rows={2} placeholder="Beskriv utvecklingsmålet" className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Hur ska den utvecklas?</span>
+              <textarea value={howToDevelop} onChange={(event) => setHowToDevelop(event.target.value)} rows={2} placeholder="Vilka aktiviteter och träningstillfällen?" className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Mätning</span>
+              <textarea value={measurement} onChange={(event) => setMeasurement(event.target.value)} rows={2} placeholder="Hur mäts framsteg?" className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Status</span>
+              <select value={status} onChange={(event) => setStatus(event.target.value as IupQuarterlyPlan['status'])} className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]">
+                <option value="ej_paborjat">Ej påbörjad</option>
+                <option value="pagar">Pågår</option>
+                <option value="klart">Klar</option>
+              </select>
+            </label>
+          </div>
+
+          {plan ? (
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-gray-400">Tränarens plan</p>
+              {plan.coach_evaluation && <p className="mt-2 text-sm text-gray-600"><span className="font-semibold text-gray-800">Tränarens utvärdering:</span> {plan.coach_evaluation}</p>}
+              {!plan.coach_evaluation && <p className="mt-2 text-sm text-gray-500">Tränaren har inte lagt till någon utvärdering ännu.</p>}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Tränaren har inte lagt upp en kvartalsplan ännu. Du kan ändå skriva ett eget mål.</p>
+          )}
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="text-sm font-extrabold text-gray-900">Månadsspann</p>
+              <span className="rounded-md bg-[#edf3ec] px-2 py-1 text-xs font-bold text-[#315c43]">{monthLabels[startMonth - 1]}–{monthLabels[endMonth - 1]}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={startMonth}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setStartMonth(value);
+                  setEndMonth((current) => Math.max(value, current));
+                }}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-semibold shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]"
+              >
+                {monthLabels.map((month, index) => <option key={month} value={index + 1}>Från {month}</option>)}
+              </select>
+              <select
+                value={endMonth}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setEndMonth(value);
+                  setStartMonth((current) => Math.min(value, current));
+                }}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-semibold shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]"
+              >
+                {monthLabels.map((month, index) => <option key={month} value={index + 1}>Till {month}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <SkillChecklist area={goal.area} selectedSkills={selectedSkills} onChange={setSelectedSkills} />
+          </div>
+
+          <div className="rounded-xl border border-[#c8d9c8] bg-[#edf3ec] p-4 sm:p-5">
+            <p className="mb-3 text-xs font-extrabold uppercase tracking-wider text-[#315c43]">Spelarens del</p>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Spelarens eget mål</span>
+              <textarea value={playerGoal} onChange={(event) => setPlayerGoal(event.target.value)} rows={2} placeholder="Vad vill du själv utveckla?" className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Spelarens utvärdering</span>
+              <textarea value={playerEvaluation} onChange={(event) => setPlayerEvaluation(event.target.value)} rows={2} placeholder="Hur går arbetet? Vad känns bra eller svårt?" className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="mb-3 text-xs font-extrabold uppercase tracking-wider text-gray-500">Ändringshistorik</p>
+            <IupChangeHistory changes={changes} />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+            {feedback && <p role={feedback.startsWith('Kunde inte') ? 'alert' : 'status'} className={`text-sm font-semibold ${feedback.startsWith('Kunde inte') ? 'text-red-700' : 'text-green-700'}`}>{feedback}</p>}
+            <button type="button" onClick={saveContribution} disabled={saving} className="ml-auto inline-flex min-h-11 min-w-40 items-center justify-center gap-2 rounded-lg bg-[#234633] px-5 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#183525] hover:shadow-md disabled:cursor-wait disabled:opacity-60">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Sparar...' : 'Spara mina ändringar'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -858,7 +1116,7 @@ function CompletionForm({
             type="button"
             onClick={onCancel}
             disabled={saving}
-            className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Avbryt
           </button>
@@ -866,7 +1124,7 @@ function CompletionForm({
             type="button"
             onClick={handleSubmit}
             disabled={saving}
-            className="flex-[2] rounded-lg bg-[#234633] py-2.5 text-sm font-bold text-white hover:bg-[#183525] disabled:opacity-50 transition-colors"
+            className="flex-[2] rounded-lg bg-[#234633] py-2.5 text-sm font-bold text-white hover:bg-[#183525] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? (
               <span className="flex items-center justify-center gap-2">
