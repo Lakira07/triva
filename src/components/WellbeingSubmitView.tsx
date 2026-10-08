@@ -8,7 +8,6 @@ import {
   Send,
   Loader2,
   CheckCircle2,
-  Users,
   LogIn,
   LogOut,
 } from 'lucide-react';
@@ -37,7 +36,7 @@ export default function WellbeingSubmitView() {
   const [loginError, setLoginError] = useState(false);
 
   const [values, setValues] = useState<Record<string, number>>({});
-  const [note, setNote] = useState('');
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -69,12 +68,16 @@ export default function WellbeingSubmitView() {
     setPlayer(null);
     setNameInput('');
     setValues({});
-    setNote('');
+    setNotes({});
     setSubmitted(false);
   };
 
   const setValue = (key: string, val: number) => {
     setValues((prev) => ({ ...prev, [key]: val }));
+  };
+
+  const setNote = (key: string, value: string) => {
+    setNotes((prev) => ({ ...prev, [key]: value }));
   };
 
   const allRated = WELLBEING_METRICS.every((m) => values[m.key] != null);
@@ -89,7 +92,11 @@ export default function WellbeingSubmitView() {
       mood: values.mood,
       stress: values.stress,
       soreness: values.soreness,
-      note: note.trim() || null,
+      sleep_note: notes.sleep?.trim() || null,
+      energy_note: notes.energy?.trim() || null,
+      mood_note: notes.mood?.trim() || null,
+      stress_note: notes.stress?.trim() || null,
+      soreness_note: notes.soreness?.trim() || null,
     });
     if (error) {
       console.error('Error saving wellbeing entry:', error);
@@ -233,23 +240,19 @@ export default function WellbeingSubmitView() {
                   </button>
                 ))}
               </div>
+              <label className="mt-3 block text-xs font-medium text-gray-500">
+                Varför tyckte du så? <span className="text-gray-400">(frivilligt)</span>
+              </label>
+              <textarea
+                value={notes[m.key] ?? ''}
+                onChange={(e) => setNote(m.key, e.target.value)}
+                placeholder={`Skriv en kort kommentar om ${m.label.toLowerCase()}`}
+                rows={2}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none"
+              />
             </div>
           );
         })}
-
-        {/* Note */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Övrigt <span className="text-gray-400">(frivilligt)</span>
-          </label>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Något tränaren bör veta?"
-            rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none"
-          />
-        </div>
       </div>
 
       <button

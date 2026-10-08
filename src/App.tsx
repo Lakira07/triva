@@ -6,10 +6,11 @@ import TrainerAuth from '@/components/TrainerAuth';
 import AdminDashboard from '@/components/AdminDashboard';
 import PlayerPortal from '@/components/PlayerPortal';
 import SuperAdmin from '@/components/SuperAdmin';
+import AdminRegister from '@/components/AdminRegister';
 import BookmarkPrompt from '@/components/BookmarkPrompt';
 import DemoBookingPage from '@/components/DemoBookingPage';
 
-type Route = 'welcome' | 'demo' | 'player' | 'trainer-auth' | 'trainer-dashboard' | 'admin';
+type Route = 'welcome' | 'demo' | 'player' | 'trainer-auth' | 'trainer-dashboard' | 'admin' | 'admin-register';
 
 interface AdminSession {
   email: string;
@@ -23,6 +24,7 @@ function getRouteFromHash(): Route {
   if (hash === '#/trainer') return 'trainer-auth';
   if (hash === '#/dashboard') return 'trainer-dashboard';
   if (hash === '#/admin') return 'admin';
+  if (hash === '#/admin-register') return 'admin-register';
   return 'welcome';
 }
 
@@ -139,12 +141,27 @@ export default function App() {
     );
   }
 
+  if (route === 'admin-register') {
+    return (
+      <>
+        <AdminRegister
+          onRegistered={() => {
+            window.location.hash = '#/admin';
+          }}
+          onBack={() => (window.location.hash = '')}
+        />
+        <BookmarkPrompt />
+      </>
+    );
+  }
+
   if (route === 'welcome') {
     return (
       <div className="min-h-screen bg-gray-50">
         <WelcomePage
           onSelectPlayer={() => (window.location.hash = '#/player')}
           onSelectTrainer={() => (window.location.hash = '#/trainer')}
+          onSelectAdminRegister={() => (window.location.hash = '#/admin-register')}
         />
         <BookmarkPrompt />
       </div>
@@ -205,6 +222,7 @@ export default function App() {
       <WelcomePage
         onSelectPlayer={() => (window.location.hash = '#/player')}
         onSelectTrainer={() => (window.location.hash = '#/trainer')}
+        onSelectAdminRegister={() => (window.location.hash = '#/admin-register')}
       />
       <BookmarkPrompt />
     </div>

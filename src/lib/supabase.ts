@@ -65,6 +65,11 @@ export interface WellbeingEntry {
   mood: number;
   stress: number;
   soreness: number;
+  sleep_note: string | null;
+  energy_note: string | null;
+  mood_note: string | null;
+  stress_note: string | null;
+  soreness_note: string | null;
   note: string | null;
   created_at: string;
 }

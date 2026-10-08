@@ -204,11 +204,17 @@ export default function WellbeingView({ teamId, initialPlayerId, onBackToList }:
                         </div>
                       ))}
                     </div>
-                    {e.note && (
-                      <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 mt-2">
-                        {e.note}
-                      </p>
-                    )}
+                    <div className="space-y-2">
+                      {WELLBEING_METRICS.map((m) => {
+                        const note = (e as any)[`${m.key}_note`];
+                        return note ? (
+                          <div key={`${e.id}-${m.key}`} className="bg-gray-50 rounded-lg px-3 py-2">
+                            <p className="text-xs font-medium text-gray-500 mb-0.5">{m.label}</p>
+                            <p className="text-sm text-gray-600">{note}</p>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
