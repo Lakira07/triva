@@ -20,10 +20,12 @@ import {
   Target,
   CalendarDays,
   BarChart3,
+  MessageCircle,
 } from 'lucide-react';
 import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type TrainingAssignment, type DevelopmentArea, type IupQuarterlyPlan, type IupQuarterlyPlanChange, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
 import IupChangeHistory from '@/components/IupChangeHistory';
 import { SkillChecklist } from '@/components/PlayerDevelopmentView';
+import ChatPrototype from '@/components/ChatPrototype';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -49,8 +51,8 @@ const METRIC_COLORS: Record<string, string> = {
   soreness: '#10b981',
 };
 
-type View = 'team-login' | 'player-login' | 'hub' | 'survey' | 'wellbeing' | 'survey-done' | 'wellbeing-done';
-type PlayerSection = 'dashboard' | 'iup' | 'training' | 'status' | 'development';
+type View = 'account-login' | 'team-login' | 'player-login' | 'hub' | 'survey' | 'wellbeing' | 'survey-done' | 'wellbeing-done';
+type PlayerSection = 'dashboard' | 'iup' | 'training' | 'status' | 'development' | 'messages';
 
 function startOfWeek(d: Date): Date {
   const date = new Date(d);
@@ -64,13 +66,14 @@ function startOfWeek(d: Date): Date {
 export default function PlayerPortal() {
   const [team, setTeam] = useState<Team | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
-  const [view, setView] = useState<View>('team-login');
+  const [view, setView] = useState<View>('account-login');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ weekly_survey_required: 1, weekly_wellbeing_required: 1 });
   const [weeklyWellbeingCount, setWeeklyWellbeingCount] = useState(0);
   const [recentWellbeing, setRecentWellbeing] = useState<WellbeingEntry[]>([]);
   const [section, setSection] = useState<PlayerSection>('dashboard');
   const [loading, setLoading] = useState(true);
+  const [restoringAccount, setRestoringAccount] = useState(true);
 
   const fetchProgress = useCallback(async (playerId: string) => {
     const weekStart = startOfWeek(new Date()).toISOString();
@@ -106,6 +109,45 @@ export default function PlayerPortal() {
   }, [team]);
 
   useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const { data: link } = await supabase
+            .from('player_auth_links')
+            .select('player_id')
+            .eq('user_id', session.user.id)
+            .maybeSingle();
+          if (link) {
+            const { data: linkedPlayer } = await supabase
+              .from('players')
+              .select('*')
+              .eq('id', link.player_id)
+              .maybeSingle();
+            if (linkedPlayer?.team_id) {
+              const { data: linkedTeam } = await supabase
+                .from('teams')
+                .select('*')
+                .eq('id', linkedPlayer.team_id)
+                .maybeSingle();
+              if (active && linkedTeam) {
+                setPlayer(linkedPlayer as Player);
+                setTeam(linkedTeam as Team);
+                setView('hub');
+              }
+            }
+          }
+        }
+      } finally {
+        if (active) setRestoringAccount(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (restoringAccount) return;
     if (team) {
       (async () => {
         await loadData();
@@ -114,17 +156,71 @@ export default function PlayerPortal() {
     } else {
       setLoading(false);
     }
-  }, [loadData, team]);
+  }, [loadData, restoringAccount, team]);
 
-  const handleLogout = () => {
+  useEffect(() => {
+    if (!player || !team) return;
+    void Promise.all([fetchProgress(player.id), fetchRecentWellbeing(player.id)]);
+  }, [fetchProgress, fetchRecentWellbeing, player, team]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setTeam(null);
     setPlayer(null);
-    setView('player-login');
+    setView('account-login');
   };
 
   const handleTeamLogout = () => {
     setTeam(null);
     setPlayer(null);
-    setView('team-login');
+    setView('account-login');
+  };
+
+  const handleAccountLogin = async (email: string, password: string): Promise<string | null> => {
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setLoading(false);
+      return 'Kunde inte logga in. Kontrollera e-post och lösenord.';
+    }
+
+    const { data: link, error: linkError } = await supabase
+      .from('player_auth_links')
+      .select('player_id')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+    if (linkError || !link) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      return 'Kontot är inte kopplat till en spelare. Be tränaren skicka en inbjudan.';
+    }
+
+    const { data: linkedPlayer } = await supabase
+      .from('players')
+      .select('*')
+      .eq('id', link.player_id)
+      .maybeSingle();
+    if (!linkedPlayer?.team_id) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      return 'Spelarprofilen kunde inte hittas. Kontakta tränaren.';
+    }
+    const { data: linkedTeam } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('id', linkedPlayer.team_id)
+      .maybeSingle();
+    if (!linkedTeam) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      return 'Laget kunde inte hittas. Kontakta tränaren.';
+    }
+
+    setTeam(linkedTeam as Team);
+    setPlayer(linkedPlayer as Player);
+    setSection('dashboard');
+    setView('hub');
+    return null;
   };
 
   const refreshAfterSubmit = async () => {
@@ -136,6 +232,15 @@ export default function PlayerPortal() {
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-8 h-8 text-black animate-spin" />
       </div>
+    );
+  }
+
+  if (view === 'account-login') {
+    return (
+      <PlayerAccountLoginScreen
+        onLogin={handleAccountLogin}
+        onLegacyLogin={() => setView('team-login')}
+      />
     );
   }
 
@@ -158,7 +263,6 @@ export default function PlayerPortal() {
         team={team!}
         onLogin={async (p) => {
           setPlayer(p);
-          await Promise.all([fetchProgress(p.id), fetchRecentWellbeing(p.id)]);
           setSection('dashboard');
           setView('hub');
         }}
@@ -232,6 +336,7 @@ export default function PlayerPortal() {
     { id: 'training', label: 'Träning', icon: CalendarDays },
     { id: 'status', label: 'Min status', icon: Heart },
     { id: 'development', label: 'Utveckling', icon: BarChart3 },
+    { id: 'messages', label: 'Meddelanden', icon: MessageCircle },
   ];
 
   return (
@@ -372,6 +477,7 @@ export default function PlayerPortal() {
           </div>
         )}
         {section === 'development' && <PlayerDevelopmentSection playerId={player.id} recentWellbeing={recentWellbeing} />}
+        {section === 'messages' && <ChatPrototype role="athlete" />}
       </main>
     </div>
   );
@@ -1154,6 +1260,79 @@ function MetricTrend({ label, entries, metric }: { label: string; entries: Wellb
   return <div className="flex items-center justify-between gap-4 text-sm"><span className="w-24 text-gray-500">{label}</span><div className="flex flex-1 items-end gap-1" aria-label={`${label}: ${values.join(', ')}`}>
     {values.map((value, index) => <div key={`${index}-${value}`} className="flex-1 rounded-t bg-[#86a38d]" style={{ height: `${Math.max(8, value * 7)}px` }} />)}
   </div><span className="w-14 text-right text-xs font-semibold text-gray-600">{direction}</span></div>;
+}
+
+function PlayerAccountLoginScreen({
+  onLogin,
+  onLegacyLogin,
+}: {
+  onLogin: (email: string, password: string) => Promise<string | null>;
+  onLegacyLogin: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!email.trim() || !password || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    const loginError = await onLogin(email.trim(), password);
+    if (loginError) setError(loginError);
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f5f6f2] px-4 py-12 sm:px-6">
+      <div className="mx-auto max-w-sm">
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#172b22] text-white">
+            <ShieldIcon className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-gray-950">Spelarinloggning</h1>
+          <p className="mt-2 text-sm text-gray-500">Logga in med uppgifterna från din inbjudan.</p>
+        </div>
+        <form className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm" onSubmit={(event) => { event.preventDefault(); void handleSubmit(); }}>
+          <div>
+            <label htmlFor="player-account-email" className="mb-1.5 block text-sm font-semibold text-gray-700">E-post</label>
+            <input
+              id="player-account-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:border-[#557461] focus:outline-none focus:ring-2 focus:ring-[#557461]/15"
+            />
+          </div>
+          <div>
+            <label htmlFor="player-account-password" className="mb-1.5 block text-sm font-semibold text-gray-700">Lösenord</label>
+            <input
+              id="player-account-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:border-[#557461] focus:outline-none focus:ring-2 focus:ring-[#557461]/15"
+            />
+          </div>
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={!email.trim() || !password || submitting}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#234633] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#183525] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <><LogIn className="h-4 w-4" /> Logga in</>}
+          </button>
+        </form>
+        <button onClick={onLegacyLogin} className="mt-4 w-full py-2 text-sm font-semibold text-gray-500 hover:text-gray-900">
+          Har du inte fått en konto-inbjudan? Använd lagkod
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // --- TEAM LOGIN SCREEN ---

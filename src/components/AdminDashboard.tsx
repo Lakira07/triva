@@ -24,6 +24,7 @@ import {
   Home,
   Dumbbell,
   Target,
+  MessageCircle,
 } from 'lucide-react';
 import { supabase, type Question, type QuestionType, type ResponseWithAnswers, type Team } from '@/lib/supabase';
 import CoachOverview from '@/components/CoachOverview';
@@ -34,8 +35,9 @@ import SurveyAnalyticsView from '@/components/SurveyAnalyticsView';
 import AICoachView from '@/components/AICoachView';
 import TrainingView from '@/components/TrainingView';
 import PlayerDevelopmentView from '@/components/PlayerDevelopmentView';
+import ChatPrototype from '@/components/ChatPrototype';
 
-type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'training' | 'development' | 'settings';
+type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'training' | 'development' | 'messages' | 'settings';
 
 interface AdminDashboardProps {
   team: Team;
@@ -340,6 +342,17 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
           Utveckling
         </button>
         <button
+          onClick={() => setTab('messages')}
+          className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
+            tab === 'messages'
+              ? 'border-black text-black'
+              : 'border-transparent text-gray-400 hover:text-gray-700'
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" strokeWidth={2.5} />
+          Meddelanden
+        </button>
+        <button
           onClick={() => setTab('settings')}
           className={`flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
             tab === 'settings'
@@ -445,6 +458,8 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
 
       {/* Development tab */}
       {tab === 'development' && <PlayerDevelopmentView teamId={team.id} />}
+
+      {tab === 'messages' && <ChatPrototype role="coach" />}
 
       {/* Settings tab */}
       {tab === 'settings' && <SettingsView teamId={team.id} />}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Loader2, Shield, Lock, LogOut } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { Loader2, Shield, Lock } from 'lucide-react';
 import { supabase, type Team } from '@/lib/supabase';
 import WelcomePage from '@/components/WelcomePage';
 import TrainerAuth from '@/components/TrainerAuth';
@@ -10,7 +10,7 @@ import AdminRegister from '@/components/AdminRegister';
 import BookmarkPrompt from '@/components/BookmarkPrompt';
 import DemoBookingPage from '@/components/DemoBookingPage';
 
-type Route = 'welcome' | 'demo' | 'player' | 'trainer-auth' | 'trainer-dashboard' | 'admin' | 'admin-register';
+type Route = 'welcome' | 'demo' | 'player' | 'player-invite' | 'trainer-auth' | 'trainer-dashboard' | 'admin' | 'admin-register';
 
 interface AdminSession {
   email: string;
@@ -19,6 +19,7 @@ interface AdminSession {
 
 function getRouteFromHash(): Route {
   const hash = window.location.hash;
+  if (new URLSearchParams(window.location.search).get('invite') === '1') return 'player-invite';
   if (hash === '#/demo') return 'demo';
   if (hash === '#/player') return 'player';
   if (hash === '#/trainer') return 'trainer-auth';
@@ -113,6 +114,17 @@ export default function App() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-black animate-spin" />
       </div>
+    );
+  }
+
+  if (route === 'player-invite') {
+    return (
+      <PlayerInviteSetup
+        onComplete={() => {
+          window.location.hash = '#/player';
+          setRoute('player');
+        }}
+      />
     );
   }
 
@@ -223,6 +235,102 @@ export default function App() {
         onSelectTrainer={() => (window.location.hash = '#/trainer')}
       />
       <BookmarkPrompt />
+    </div>
+  );
+}
+
+function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
+  const [sessionReady, setSessionReady] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active && session) setSessionReady(true);
+    });
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (active && session) setSessionReady(true);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (password.length < 8) {
+      setError('Lösenordet måste vara minst 8 tecken.');
+      return;
+    }
+    if (password !== confirmation) {
+      setError('Lösenorden matchar inte.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const { error: updateError } = await supabase.auth.updateUser({ password });
+    if (updateError) {
+      setError(updateError.message);
+      setSaving(false);
+      return;
+    }
+    onComplete();
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 px-4 py-12 sm:px-6">
+      <div className="mx-auto max-w-sm">
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-black text-white">
+            <Lock className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl font-bold text-black">Skapa ditt lösenord</h1>
+          <p className="mt-2 text-sm text-gray-500">Välj ett personligt lösenord för ditt spelarkonto.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div>
+            <label htmlFor="invite-password" className="mb-1.5 block text-sm font-semibold text-gray-700">Lösenord</label>
+            <input
+              id="invite-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              disabled={!sessionReady || saving}
+              className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-gray-50"
+            />
+          </div>
+          <div>
+            <label htmlFor="invite-password-confirm" className="mb-1.5 block text-sm font-semibold text-gray-700">Upprepa lösenord</label>
+            <input
+              id="invite-password-confirm"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              required
+              disabled={!sessionReady || saving}
+              className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-gray-50"
+            />
+          </div>
+          {!sessionReady && <p className="text-sm text-amber-700">Inbjudningslänken är ogiltig eller har gått ut. Be tränaren skicka en ny.</p>}
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={!sessionReady || !password || !confirmation || saving}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Spara lösenord och fortsätt'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

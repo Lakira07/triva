@@ -1,0 +1,39 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.117.3"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.117.3": "614f9e550b12b4be7054f947cc4949ebcc0eceeb8e83f7e226cc875356e9b126"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@capacitor/android@^7.6.9",
+        "npm:@capacitor/cli@^7.6.9",
+        "npm:@capacitor/core@^7.6.9",
+        "npm:@capacitor/ios@^7.6.9",
+        "npm:@eslint/js@^9.9.1",
+        "npm:@supabase/supabase-js@^2.57.4",
+        "npm:@types/react-dom@^18.3.0",
+        "npm:@types/react@^18.3.5",
+        "npm:@vitejs/plugin-react@^4.3.1",
+        "npm:autoprefixer@^10.4.18",
+        "npm:eslint-plugin-react-hooks@^5.1.0-rc.0",
+        "npm:eslint-plugin-react-refresh@~0.4.11",
+        "npm:eslint@^9.9.1",
+        "npm:globals@^15.9.0",
+        "npm:lucide-react@0.446",
+        "npm:postcss@^8.4.35",
+        "npm:react-dom@^18.3.1",
+        "npm:react-markdown@^10.1.0",
+        "npm:react@^18.3.1",
+        "npm:remark-gfm@^4.0.1",
+        "npm:tailwindcss@^3.4.1",
+        "npm:typescript-eslint@^8.3.0",
+        "npm:typescript@^5.5.3",
+        "npm:vite@^5.4.2"
+      ]
+    }
+  }
+}

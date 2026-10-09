@@ -4,11 +4,25 @@ import { supabase, type Player } from '@/lib/supabase';
 
 const POSITIONS = ['Målvakt', 'Försvarare', 'Mittfältare', 'Anfallare'];
 
+async function sendPlayerInvite(payload: Record<string, unknown>): Promise<string | null> {
+  const { data, error } = await supabase.functions.invoke<{ error?: string }>('invite-player', {
+    body: payload,
+  });
+  if (!error) return data?.error ?? null;
+
+  if (error.context instanceof Response) {
+    const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+    if (responseBody?.error) return responseBody.error;
+  }
+  return error.message;
+}
+
 export default function PlayersView({ teamId }: { teamId: string }) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const fetchPlayers = useCallback(async () => {
     const { data, error } = await supabase
@@ -30,34 +44,45 @@ export default function PlayersView({ teamId }: { teamId: string }) {
     })();
   }, [fetchPlayers]);
 
-  const addPlayer = async (name: string, position: string | null, jersey: number | null) => {
-    const { error } = await supabase
-      .from('players')
-      .insert({ name, position: position || null, jersey_number: jersey, team_id: teamId });
-    if (error) {
-      console.error('Error adding player:', error);
-      return;
-    }
+  const addPlayer = async (
+    name: string,
+    email: string,
+    position: string | null,
+    jersey: number | null
+  ): Promise<string | null> => {
+    const inviteError = await sendPlayerInvite({ teamId, name, email, position, jerseyNumber: jersey });
+    if (inviteError) return inviteError;
     setShowForm(false);
+    setSuccessMessage(`Inbjudan skickad till ${email}. Spelaren väljer sitt eget lösenord.`);
     await fetchPlayers();
+    return null;
   };
 
   const updatePlayer = async (
     id: string,
     name: string,
+    email: string,
     position: string | null,
     jersey: number | null
-  ) => {
+  ): Promise<string | null> => {
     const { error } = await supabase
       .from('players')
       .update({ name, position: position || null, jersey_number: jersey })
       .eq('id', id);
     if (error) {
       console.error('Error updating player:', error);
-      return;
+      return error.message;
+    }
+    if (email.trim()) {
+      const inviteError = await sendPlayerInvite({ teamId, playerId: id, name, email, position, jerseyNumber: jersey });
+      if (inviteError) return inviteError;
+      setSuccessMessage(`Inbjudan skickad till ${email}. Spelaren väljer sitt eget lösenord.`);
+    } else {
+      setSuccessMessage('Spelaruppgifterna har sparats.');
     }
     setEditingPlayer(null);
     await fetchPlayers();
+    return null;
   };
 
   const deletePlayer = async (id: string) => {
@@ -79,6 +104,11 @@ export default function PlayersView({ teamId }: { teamId: string }) {
 
   return (
     <div>
+      {successMessage && (
+        <p role="status" className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+          {successMessage}
+        </p>
+      )}
       {players.length === 0 && !showForm && (
         <div className="text-center py-16 bg-white rounded-2xl border border-gray-200">
           <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -124,8 +154,8 @@ export default function PlayersView({ teamId }: { teamId: string }) {
       {editingPlayer && (
         <PlayerForm
           player={editingPlayer}
-          onSave={(name, position, jersey) =>
-            updatePlayer(editingPlayer.id, name, position, jersey)
+          onSave={(name, email, position, jersey) =>
+            updatePlayer(editingPlayer.id, name, email, position, jersey)
           }
           onCancel={() => setEditingPlayer(null)}
         />
@@ -156,21 +186,25 @@ function PlayerForm({
   onCancel,
 }: {
   player?: Player;
-  onSave: (name: string, position: string | null, jersey: number | null) => void;
+  onSave: (name: string, email: string, position: string | null, jersey: number | null) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(player?.name ?? '');
+  const [email, setEmail] = useState('');
   const [position, setPosition] = useState(player?.position ?? '');
   const [jersey, setJersey] = useState(
     player?.jersey_number != null ? String(player.jersey_number) : ''
   );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || (!player && !email.trim())) return;
     setSaving(true);
+    setError(null);
     const jerseyNum = jersey.trim() ? parseInt(jersey) : null;
-    await onSave(name.trim(), position || null, jerseyNum);
+    const saveError = await onSave(name.trim(), email.trim(), position || null, jerseyNum);
+    if (saveError) setError(saveError);
     setSaving(false);
   };
 
@@ -194,6 +228,24 @@ function PlayerForm({
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
             autoFocus
           />
+        </div>
+        <div>
+          <label htmlFor="player-email" className="block text-sm font-medium text-gray-700 mb-1.5">
+            E-post {player && <span className="text-gray-400">(frivilligt)</span>}
+          </label>
+          <input
+            id="player-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="spelare@example.com"
+            required={!player}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+          />
+          <p className="mt-1.5 text-xs leading-5 text-gray-500">
+            Vi skickar en inbjudan. Spelaren skapar sitt eget lösenord via e-postlänken.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Position</label>
@@ -225,14 +277,15 @@ function PlayerForm({
             className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
           />
         </div>
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2 pt-2">
           <button
             onClick={handleSubmit}
-            disabled={!name.trim() || saving}
+            disabled={!name.trim() || (!player && !email.trim()) || saving}
             className="flex items-center gap-2 bg-black hover:bg-gray-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            {player ? 'Spara ändringar' : 'Spara spelare'}
+            {player ? (email.trim() ? 'Spara och bjud in' : 'Spara ändringar') : 'Skapa spelare och bjud in'}
           </button>
           <button
             onClick={onCancel}
