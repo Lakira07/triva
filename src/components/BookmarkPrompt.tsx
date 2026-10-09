@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { X, Bookmark, Share, Apple, Smartphone, Check, HelpCircle } from 'lucide-react';
 
 const STORAGE_KEY = 'triva-bookmark-dismissed';
@@ -9,6 +10,8 @@ export default function BookmarkPrompt() {
   const [platform, setPlatform] = useState<'ios' | 'android' | 'other'>('other');
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
+
     const ua = navigator.userAgent;
     if (/iPhone|iPad|iPod/.test(ua)) {
       setPlatform('ios');
