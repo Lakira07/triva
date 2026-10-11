@@ -459,7 +459,7 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
       {/* Development tab */}
       {tab === 'development' && <PlayerDevelopmentView teamId={team.id} />}
 
-      {tab === 'messages' && <ChatPrototype role="coach" />}
+      {tab === 'messages' && <ChatPrototype role="coach" teamId={team.id} trainerCode={team.trainer_code} />}
 
       {/* Settings tab */}
       {tab === 'settings' && <SettingsView teamId={team.id} />}

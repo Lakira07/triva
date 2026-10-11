@@ -66,6 +66,7 @@ function startOfWeek(d: Date): Date {
 export default function PlayerPortal() {
   const [team, setTeam] = useState<Team | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
+  const [isAccountPlayer, setIsAccountPlayer] = useState(false);
   const [view, setView] = useState<View>('account-login');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ weekly_survey_required: 1, weekly_wellbeing_required: 1 });
@@ -134,6 +135,7 @@ export default function PlayerPortal() {
               if (active && linkedTeam) {
                 setPlayer(linkedPlayer as Player);
                 setTeam(linkedTeam as Team);
+                setIsAccountPlayer(true);
                 setView('hub');
               }
             }
@@ -167,12 +169,14 @@ export default function PlayerPortal() {
     await supabase.auth.signOut();
     setTeam(null);
     setPlayer(null);
+    setIsAccountPlayer(false);
     setView('account-login');
   };
 
   const handleTeamLogout = () => {
     setTeam(null);
     setPlayer(null);
+    setIsAccountPlayer(false);
     setView('account-login');
   };
 
@@ -218,6 +222,7 @@ export default function PlayerPortal() {
 
     setTeam(linkedTeam as Team);
     setPlayer(linkedPlayer as Player);
+    setIsAccountPlayer(true);
     setSection('dashboard');
     setView('hub');
     return null;
@@ -477,7 +482,7 @@ export default function PlayerPortal() {
           </div>
         )}
         {section === 'development' && <PlayerDevelopmentSection playerId={player.id} recentWellbeing={recentWellbeing} />}
-        {section === 'messages' && <ChatPrototype role="athlete" />}
+        {section === 'messages' && <ChatPrototype role="player" teamId={team!.id} playerId={player.id} canMessage={isAccountPlayer} />}
       </main>
     </div>
   );
