@@ -27,7 +27,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
     const fetchStats = async () => {
       const [playersResult, teamsResult] = await Promise.all([
         supabase.from('players').select('*', { count: 'exact', head: true }),
-        supabase.from('teams').select('*', { count: 'exact', head: true }),
+        supabase.from('teams').select('id', { count: 'exact', head: true }),
       ]);
 
       if (playersResult.error || teamsResult.error) {

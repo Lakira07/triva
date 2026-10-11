@@ -17,7 +17,7 @@ async function sendPlayerInvite(payload: Record<string, unknown>): Promise<strin
   return error.message;
 }
 
-export default function PlayersView({ teamId }: { teamId: string }) {
+export default function PlayersView({ teamId, trainerCode }: { teamId: string; trainerCode: string }) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -50,7 +50,7 @@ export default function PlayersView({ teamId }: { teamId: string }) {
     position: string | null,
     jersey: number | null
   ): Promise<string | null> => {
-    const inviteError = await sendPlayerInvite({ teamId, name, email, position, jerseyNumber: jersey });
+    const inviteError = await sendPlayerInvite({ teamId, trainerCode, name, email, position, jerseyNumber: jersey });
     if (inviteError) return inviteError;
     setShowForm(false);
     setSuccessMessage(`Inbjudan skickad till ${email}. Spelaren väljer sitt eget lösenord.`);
@@ -74,7 +74,7 @@ export default function PlayersView({ teamId }: { teamId: string }) {
       return error.message;
     }
     if (email.trim()) {
-      const inviteError = await sendPlayerInvite({ teamId, playerId: id, name, email, position, jerseyNumber: jersey });
+      const inviteError = await sendPlayerInvite({ teamId, trainerCode, playerId: id, name, email, position, jerseyNumber: jersey });
       if (inviteError) return inviteError;
       setSuccessMessage(`Inbjudan skickad till ${email}. Spelaren väljer sitt eget lösenord.`);
     } else {

@@ -128,7 +128,7 @@ export default function PlayerPortal() {
             if (linkedPlayer?.team_id) {
               const { data: linkedTeam } = await supabase
                 .from('teams')
-                .select('*')
+                .select('id, name, join_code, owner_id, created_at, code_expires_at')
                 .eq('id', linkedPlayer.team_id)
                 .maybeSingle();
               if (active && linkedTeam) {
@@ -207,7 +207,7 @@ export default function PlayerPortal() {
     }
     const { data: linkedTeam } = await supabase
       .from('teams')
-      .select('*')
+      .select('id, name, join_code, owner_id, created_at, code_expires_at')
       .eq('id', linkedPlayer.team_id)
       .maybeSingle();
     if (!linkedTeam) {
@@ -1351,7 +1351,7 @@ function TeamLoginScreen({ onTeamFound }: { onTeamFound: (team: Team) => void })
     setExpired(false);
     const { data, error } = await supabase
       .from('teams')
-      .select('*')
+      .select('id, name, join_code, owner_id, created_at, code_expires_at')
       .eq('join_code', codeInput.trim().toUpperCase())
       .maybeSingle();
     if (error || !data) {

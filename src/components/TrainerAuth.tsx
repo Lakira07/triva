@@ -19,22 +19,25 @@ export default function TrainerAuth({ onAuthed, onBack }: TrainerAuthProps) {
     if (!codeInput.trim() || loading) return;
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
-      .from('teams')
-      .select('*')
-      .eq('trainer_code', codeInput.trim().toUpperCase())
-      .maybeSingle();
-    if (error || !data) {
-      setError('Ogiltig tränarkod. Kontrollera koden och försök igen.');
+    const { data, error } = await supabase.functions.invoke<{ team?: Team; error?: string }>(
+      'trainer-code-login',
+      { body: { trainerCode: codeInput.trim().toUpperCase() } },
+    );
+    let responseError = data?.error;
+    if (error && error.context instanceof Response) {
+      const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+      responseError = responseBody?.error ?? responseError;
+    }
+    if (error || !data?.team) {
+      if (responseError?.toLowerCase().includes('expired')) {
+        setError('Tränarkoden har löpt ut. Kontakta administratören för att förnya koden.');
+      } else {
+        setError('Ogiltig tränarkod. Kontrollera koden och försök igen.');
+      }
       setLoading(false);
       return;
     }
-    const team = data as Team;
-    if (team.code_expires_at && new Date(team.code_expires_at).getTime() <= Date.now()) {
-      setError('Tränarkoden har löpt ut. Kontakta administratören för att förnya koden.');
-      setLoading(false);
-      return;
-    }
+    const team = data.team;
     setLoading(false);
     onAuthed(team);
   };

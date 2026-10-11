@@ -442,7 +442,7 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
       )}
 
       {/* Players tab */}
-      {tab === 'players' && <PlayersView teamId={team.id} />}
+      {tab === 'players' && <PlayersView teamId={team.id} trainerCode={team.trainer_code} />}
 
       {/* Wellbeing tab */}
       {tab === 'wellbeing' && <WellbeingView teamId={team.id} initialPlayerId={selectedWellbeingPlayer} onBackToList={() => setSelectedWellbeingPlayer(null)} />}

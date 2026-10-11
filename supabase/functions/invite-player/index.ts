@@ -26,17 +26,10 @@ Deno.serve(async (request) => {
   if (!supabaseUrl || !anonKey || !serviceRoleKey || !siteUrl) {
     return jsonResponse({ error: 'Player invitations are not configured.' }, 500);
   }
-  if (!authorization) return jsonResponse({ error: 'Sign in as the team coach first.' }, 401);
-
-  const userClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authorization } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: { user: coach }, error: authError } = await userClient.auth.getUser();
-  if (authError || !coach) return jsonResponse({ error: 'Your session has expired. Sign in again.' }, 401);
 
   let payload: {
     teamId?: string;
+    trainerCode?: string;
     playerId?: string;
     name?: string;
     email?: string;
@@ -50,6 +43,7 @@ Deno.serve(async (request) => {
   }
 
   const teamId = payload.teamId?.trim();
+  const trainerCode = payload.trainerCode?.trim().toUpperCase();
   const name = payload.name?.trim();
   const email = payload.email?.trim().toLowerCase();
   if (!teamId || !name || name.length > 100 || !email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -64,13 +58,35 @@ Deno.serve(async (request) => {
   });
   const inviteRedirectUrl = `${siteUrl.replace(/\/+$/, '')}/?invite=1`;
 
-  const { data: team } = await adminClient
-    .from('teams')
-    .select('id')
-    .eq('id', teamId)
-    .eq('owner_id', coach.id)
-    .maybeSingle();
-  if (!team) return jsonResponse({ error: 'Your account is not assigned as this team’s coach.' }, 403);
+  if (trainerCode) {
+    const { data: team, error: teamError } = await adminClient
+      .from('teams')
+      .select('id, code_expires_at')
+      .eq('id', teamId)
+      .eq('trainer_code', trainerCode)
+      .maybeSingle();
+    if (teamError) return jsonResponse({ error: 'Could not verify the trainer code.' }, 500);
+    if (!team) return jsonResponse({ error: 'Invalid trainer code. Sign in again with your team code.' }, 401);
+    if (team.code_expires_at && new Date(team.code_expires_at).getTime() <= Date.now()) {
+      return jsonResponse({ error: 'The trainer code has expired. Ask the admin for a new code.' }, 401);
+    }
+  } else {
+    if (!authorization) return jsonResponse({ error: 'Sign in as the team coach first.' }, 401);
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: { user: coach }, error: authError } = await userClient.auth.getUser();
+    if (authError || !coach) return jsonResponse({ error: 'Your session has expired. Sign in again.' }, 401);
+
+    const { data: team } = await adminClient
+      .from('teams')
+      .select('id')
+      .eq('id', teamId)
+      .eq('owner_id', coach.id)
+      .maybeSingle();
+    if (!team) return jsonResponse({ error: 'Your account is not assigned as this team’s coach.' }, 403);
+  }
 
   let playerId = payload.playerId?.trim();
   let createdPlayer = false;
