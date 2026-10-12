@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { supabase, type Team } from '@/lib/supabase';
 import CodeExpiryControl from '@/components/CodeExpiryControl';
+import NotificationBell from '@/components/NotificationBell';
+import PushDiagnostics from '@/components/PushDiagnostics';
 
 interface TeamWithStats extends Team {
   player_count: number;
@@ -54,6 +56,7 @@ export default function SuperAdmin({ session, onLogout }: SuperAdminProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [teamCreateNotice, setTeamCreateNotice] = useState<string | null>(null);
 
   const fetchTeams = useCallback(async () => {
     const { data: teamData, error } = await supabase
@@ -182,15 +185,20 @@ export default function SuperAdmin({ session, onLogout }: SuperAdminProps) {
               </p>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-1 text-sm text-gray-400 hover:text-black transition-colors"
-          >
-            <LogOut className="w-4 h-4" /> Logga ut
-          </button>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1 text-sm text-gray-400 hover:text-black transition-colors"
+            >
+              <LogOut className="w-4 h-4" /> Logga ut
+            </button>
+          </div>
         </div>
         <p className="text-gray-500 ml-14">Hantera alla lag, tränare och koder</p>
       </div>
+
+      <PushDiagnostics />
 
       {/* Stats overview */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
@@ -219,66 +227,40 @@ export default function SuperAdmin({ session, onLogout }: SuperAdminProps) {
         </button>
       </div>
 
+      {teamCreateNotice && (
+        <p role="status" className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {teamCreateNotice}
+        </p>
+      )}
+
       {/* Create form */}
       {showCreateForm && (
         <CreateTeamForm
           onCreate={async (name, ownerEmail) => {
-            let ownerId: string | null = null;
-            if (ownerEmail.trim()) {
-              const { data: existingUser } = await supabase
-                .from('profiles')
-                .select('id, email')
-                .eq('email', ownerEmail.trim().toLowerCase())
-                .maybeSingle();
-              if (existingUser) {
-                ownerId = existingUser.id;
-              }
+            setTeamCreateNotice(null);
+            const { data, error } = await supabase.functions.invoke<{
+              error?: string;
+              email?: string;
+              invitationSent?: boolean;
+            }>('create-team-invite', {
+              body: { name: name.trim(), email: ownerEmail.trim().toLowerCase() },
+            });
+
+            let responseError = data?.error;
+            if (error && error.context instanceof Response) {
+              const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+              responseError = responseBody?.error ?? responseError;
             }
-            let joinCode = generateCode();
-            let trainerCode = generateCode();
-            let attempts = 0;
-            while (attempts < 10) {
-              const { data: existing } = await supabase
-                .from('teams')
-                .select('id')
-                .or(`join_code.eq.${joinCode},trainer_code.eq.${joinCode}`)
-                .maybeSingle();
-              if (!existing) break;
-              joinCode = generateCode();
-              attempts++;
+            if (error || !data) {
+              return responseError ?? 'Laget kunde inte skapas. Försök igen.';
             }
-            attempts = 0;
-            while (attempts < 10) {
-              const { data: existing } = await supabase
-                .from('teams')
-                .select('id')
-                .or(`join_code.eq.${trainerCode},trainer_code.eq.${trainerCode}`)
-                .maybeSingle();
-              if (!existing && trainerCode !== joinCode) break;
-              trainerCode = generateCode();
-              attempts++;
-            }
-            const { error } = await supabase
-              .from('teams')
-              .insert({ name: name.trim(), join_code: joinCode, trainer_code: trainerCode, owner_id: ownerId });
-            if (error) {
-              console.error('Error creating team:', error);
-              return;
-            }
-            const { data: newTeam } = await supabase
-              .from('teams')
-              .select('id')
-              .eq('join_code', joinCode)
-              .maybeSingle();
-            if (newTeam) {
-              await supabase.from('team_settings').insert({
-                team_id: newTeam.id,
-                weekly_survey_required: 1,
-                weekly_wellbeing_required: 1,
-              });
-            }
+
             setShowCreateForm(false);
+            setTeamCreateNotice(data.invitationSent
+              ? `Laget är skapat. Inbjudan har skickats till ${data.email}.`
+              : `Laget är skapat och kopplat till ${data.email}.`);
             await fetchTeams();
+            return null;
           }}
           onCancel={() => setShowCreateForm(false)}
         />
@@ -432,17 +414,18 @@ function CreateTeamForm({
   onCreate,
   onCancel,
 }: {
-  onCreate: (name: string, ownerEmail: string) => void;
+  onCreate: (name: string, ownerEmail: string) => Promise<string | null>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!name.trim() || saving) return;
+    if (!name.trim() || !ownerEmail.trim() || saving) return;
     setSaving(true);
-    await onCreate(name, ownerEmail);
+    setError(await onCreate(name, ownerEmail));
     setSaving(false);
   };
 
@@ -467,23 +450,24 @@ function CreateTeamForm({
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Tränarens e-post <span className="text-gray-400">(frivilligt — måste vara registrerad)</span>
+            Tränarens e-post
           </label>
           <input
             type="email"
             value={ownerEmail}
             onChange={(e) => setOwnerEmail(e.target.value)}
             placeholder="tränare@example.se"
+            required
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
           />
           <p className="text-xs text-gray-400 mt-1.5">
-            Om e-posten matchar en registrerad tränare kopplas laget till dem automatiskt.
-            Både en spelarkod och en tränarkod genereras automatiskt.
+            En ny tränare får en länk via e-post för att skapa ett lösenord. Befintliga konton kopplas direkt.
           </p>
         </div>
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         <button
           onClick={handleSubmit}
-          disabled={!name.trim() || saving}
+          disabled={!name.trim() || !ownerEmail.trim() || saving}
           className="flex items-center gap-2 bg-black hover:bg-gray-800 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}

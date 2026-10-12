@@ -15,31 +15,103 @@ export default function TrainerAuth({ onAuthed, onBack }: TrainerAuthProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const createCodeLoginUser = async (seed: string) => {
+    const normalizedSeed = seed.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const email = `trainer-${normalizedSeed.slice(0, 32)}@triva-code.local`;
+    const password = `Triva-${normalizedSeed.slice(0, 22)}-code!`;
+
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+    if (signUpError && !signUpError.message.toLowerCase().includes('already')) {
+      throw new Error('Kunde inte skapa en giltig användarsession för tränarkoden. Försök igen.');
+    }
+
+    if (signUpData.user) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !signInData.user) {
+        throw new Error('Kunde inte skapa en giltig användarsession för tränarkoden. Försök igen.');
+      }
+      return signInData.user.id;
+    }
+
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError || !signInData.user) {
+      throw new Error('Kunde inte skapa en giltig användarsession för tränarkoden. Försök igen.');
+    }
+
+    return signInData.user.id;
+  };
+
   const handleCodeLogin = async () => {
     if (!codeInput.trim() || loading) return;
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase.functions.invoke<{ team?: Team; error?: string }>(
-      'trainer-code-login',
-      { body: { trainerCode: codeInput.trim().toUpperCase() } },
-    );
-    let responseError = data?.error;
-    if (error && error.context instanceof Response) {
-      const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
-      responseError = responseBody?.error ?? responseError;
-    }
-    if (error || !data?.team) {
-      if (responseError?.toLowerCase().includes('expired')) {
-        setError('Tränarkoden har löpt ut. Kontakta administratören för att förnya koden.');
-      } else {
-        setError('Ogiltig tränarkod. Kontrollera koden och försök igen.');
+
+    try {
+      const { data, error } = await supabase.functions.invoke<{ team?: Team; error?: string }>(
+        'trainer-code-login',
+        { body: { trainerCode: codeInput.trim().toUpperCase() } },
+      );
+      let responseError = data?.error;
+      if (error && error.context instanceof Response) {
+        const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+        responseError = responseBody?.error ?? responseError;
       }
+      if (error || !data?.team) {
+        if (responseError?.toLowerCase().includes('expired')) {
+          setError('Tränarkoden har löpt ut. Kontakta administratören för att förnya koden.');
+        } else {
+          setError('Ogiltig tränarkod. Kontrollera koden och försök igen.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      const team = data.team;
+      const normalizedSeed = team.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const codeLoginEmail = `trainer-${normalizedSeed.slice(0, 32)}@triva-code.local`;
+      if (team.owner_id) {
+        const { data: ownerProfile } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('id', team.owner_id)
+          .maybeSingle();
+        if (ownerProfile?.email?.toLowerCase() !== codeLoginEmail) {
+          setError('Laget är kopplat till ett tränarkonto. Logga in med tränarens e-post och lösenord.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+        if (signOutError) {
+          throw new Error('Kunde inte återställa användarsessionen innan tränarkoden användes.');
+        }
+      }
+
+      const userId = await createCodeLoginUser(team.id);
+
+      const { error: claimError } = await supabase
+        .from('teams')
+        .update({ owner_id: userId })
+        .eq('id', team.id)
+        .is('owner_id', null);
+      if (claimError) {
+        await supabase.auth.signOut();
+        setError('Kunde inte koppla tränarkoden till en användarsession. Försök igen.');
+        setLoading(false);
+        return;
+      }
+
+      const authedTeam = { ...team, owner_id: userId } as Team;
       setLoading(false);
-      return;
+      onAuthed(authedTeam);
+    } catch (loginError) {
+      const message = loginError instanceof Error ? loginError.message : 'Kunde inte skapa en giltig användarsession för tränarkoden. Försök igen.';
+      setError(message);
+      setLoading(false);
     }
-    const team = data.team;
-    setLoading(false);
-    onAuthed(team);
   };
 
   const handleAccountLogin = async () => {

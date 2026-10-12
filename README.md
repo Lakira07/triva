@@ -32,9 +32,11 @@ Before using invitations in a deployed environment, install the Supabase CLI and
 
 - Apply the database migration with `npx supabase db push`.
 - Deploy the invitation function with `npx supabase functions deploy invite-player`.
+- Deploy the admin team-invitation function with `npx supabase functions deploy create-team-invite`.
 - Set the `SITE_URL` Edge Function secret to the deployed website origin, for example `https://triva.example.com`.
 - Set the same origin as the Supabase Auth Site URL and add it to the Auth redirect URL allowlist.
 - Configure Supabase Auth email delivery and the invitation email template.
+- Admins can create teams with a trainer email. New trainers receive an invitation link, set their password, and are taken to their team dashboard; existing trainer accounts are assigned directly.
 - Ensure each coach signs in with the Supabase account assigned as that team's owner. The legacy trainer-code login cannot create athlete accounts.
 
 The `player_auth_links` table contains only the Auth user ID and player ID. It does not store athlete email addresses in the broadly queried `players` table. Invitation provisioning runs with the Supabase service role inside the Edge Function; never put that key in the web app.

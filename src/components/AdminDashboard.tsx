@@ -36,6 +36,7 @@ import AICoachView from '@/components/AICoachView';
 import TrainingView from '@/components/TrainingView';
 import PlayerDevelopmentView from '@/components/PlayerDevelopmentView';
 import ChatPrototype from '@/components/ChatPrototype';
+import NotificationBell from '@/components/NotificationBell';
 
 type Tab = 'overview' | 'questions' | 'responses' | 'players' | 'wellbeing' | 'analytics' | 'ai' | 'training' | 'development' | 'messages' | 'settings';
 
@@ -197,12 +198,15 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
               </p>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-black transition-colors"
-          >
-            <LogOut className="w-4 h-4" /> Logga ut
-          </button>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1 text-sm font-semibold text-gray-400 hover:text-black transition-colors"
+            >
+              <LogOut className="w-4 h-4" /> Logga ut
+            </button>
+          </div>
         </div>
         <p className="text-gray-500 ml-15 font-medium">Följ lagets utveckling, återhämtning och aktuella status</p>
       </div>

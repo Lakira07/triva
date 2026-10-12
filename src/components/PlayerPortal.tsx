@@ -27,6 +27,7 @@ import { supabase, type Player, type Question, type Team, type AppSettings, type
 import IupChangeHistory from '@/components/IupChangeHistory';
 import { SkillChecklist } from '@/components/PlayerDevelopmentView';
 import ChatPrototype from '@/components/ChatPrototype';
+import NotificationBell from '@/components/NotificationBell';
 
 const METRIC_ICONS: Record<string, typeof Moon> = {
   sleep: Moon,
@@ -223,6 +224,53 @@ export default function PlayerPortal() {
     setView('account-login');
   };
 
+  const ensurePlayerAuthLink = useCallback(async (playerId: string): Promise<void> => {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session) {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+      if (signOutError) {
+        throw new Error('Kunde inte återställa användarsessionen innan spelarprofilen kopplades.');
+      }
+    }
+
+    const normalizedSeed = playerId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const email = `player-${normalizedSeed.slice(0, 32)}@triva-code.local`;
+    const password = `Triva-${normalizedSeed.slice(0, 22)}-player!`;
+
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+    if (signUpError && !signUpError.message.toLowerCase().includes('already')) {
+      throw new Error('Kunde inte skapa en giltig användarsession för spelaren.');
+    }
+
+    let userId = signUpData.user?.id;
+    if (!userId) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !signInData.user) {
+        throw new Error('Kunde inte skapa en giltig användarsession för spelaren.');
+      }
+      userId = signInData.user.id;
+    }
+
+    if (signUpData.user && !signUpData.session) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !signInData.user) {
+        throw new Error('Kunde inte skapa en giltig användarsession för spelaren.');
+      }
+      userId = signInData.user.id;
+    }
+
+    const { error: linkError } = await supabase.from('player_auth_links').upsert({
+      player_id: playerId,
+      user_id: userId,
+    }, { onConflict: 'player_id' });
+
+    if (linkError) {
+      await supabase.auth.signOut();
+      throw new Error('Kunde inte koppla spelaren till en användarsession.');
+    }
+  }, []);
+
   const handleAccountLogin = async (email: string, password: string): Promise<string | null> => {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -335,9 +383,14 @@ export default function PlayerPortal() {
       <PlayerLoginScreen
         team={team!}
         onLogin={async (p) => {
-          setPlayer(p);
-          setSection('dashboard');
-          setView('hub');
+          try {
+            await ensurePlayerAuthLink(p.id);
+            setPlayer(p);
+            setSection('dashboard');
+            setView('hub');
+          } catch {
+            setView('account-login');
+          }
         }}
         onBack={handleTeamLogout}
       />
@@ -435,6 +488,7 @@ export default function PlayerPortal() {
                 <p className="text-sm font-semibold text-gray-800">{player.name}</p>
                 <p className="text-xs text-gray-400">{player.position || 'Spelare'}</p>
               </div>
+              {isAccountPlayer && <NotificationBell />}
               <button
                 onClick={handleLogout}
                 aria-label="Logga ut"
@@ -1580,6 +1634,7 @@ function PlayerLoginScreen({
       setLoginLoading(false);
       return;
     }
+
     setLoginLoading(false);
     onLogin(data as Player);
   };
@@ -1800,6 +1855,7 @@ function SurveyForm({
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const setAnswer = (qid: string, val: string) => {
     setAnswers((prev) => ({ ...prev, [qid]: val }));
@@ -1811,6 +1867,7 @@ function SurveyForm({
   const handleSubmit = async () => {
     if (!allAnswered || submitting) return;
     setSubmitting(true);
+    setSubmitError('');
     const { data: respData, error: respError } = await supabase
       .from('responses')
       .insert({ player_id: player.id, player_name: player.name, team_id: teamId })
@@ -1818,6 +1875,7 @@ function SurveyForm({
       .single();
     if (respError) {
       console.error('Error creating response:', respError);
+      setSubmitError('Enkätsvaret kunde inte sparas. Försök igen.');
       setSubmitting(false);
       return;
     }
@@ -1829,6 +1887,9 @@ function SurveyForm({
     const { error: ansError } = await supabase.from('answers').insert(answerRows);
     if (ansError) {
       console.error('Error saving answers:', ansError);
+      const { error: cleanupError } = await supabase.from('responses').delete().eq('id', respData.id);
+      if (cleanupError) console.error('Error removing incomplete survey response:', cleanupError);
+      setSubmitError('Svaren kunde inte sparas eller avisera tränaren. Försök igen.');
       setSubmitting(false);
       return;
     }
@@ -1957,6 +2018,7 @@ function SurveyForm({
           </>
         )}
       </button>
+      {submitError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{submitError}</p>}
       {!allAnswered && (
         <p className="text-center text-sm text-gray-400 mt-3">
           Besvara alla frågor för att skicka in.
@@ -1982,6 +2044,7 @@ function WellbeingForm({
   const [values, setValues] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const setValue = (key: string, val: number) => {
     setValues((prev) => ({ ...prev, [key]: val }));
@@ -1997,6 +2060,7 @@ function WellbeingForm({
   const handleSubmit = async () => {
     if (!allRated || submitting) return;
     setSubmitting(true);
+    setSubmitError('');
     const { error } = await supabase.from('wellbeing_entries').insert({
       player_id: player.id,
       team_id: teamId,
@@ -2013,6 +2077,7 @@ function WellbeingForm({
     });
     if (error) {
       console.error('Error saving wellbeing entry:', error);
+      setSubmitError('Välmåenderapporten kunde inte sparas eller avisera tränaren. Försök igen.');
       setSubmitting(false);
       return;
     }
@@ -2115,6 +2180,7 @@ function WellbeingForm({
           </>
         )}
       </button>
+      {submitError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{submitError}</p>}
       {!allRated && (
         <p className="text-center text-sm text-gray-400 mt-3">
           Sätt ett betyg på alla fem kategorier för att skicka.

@@ -19,7 +19,8 @@ interface AdminSession {
 
 function getRouteFromHash(): Route {
   const hash = window.location.hash;
-  if (new URLSearchParams(window.location.search).get('invite') === '1') return 'player-invite';
+  const inviteType = new URLSearchParams(window.location.search).get('invite');
+  if (inviteType === '1') return 'player-invite';
   if (hash === '#/demo') return 'demo';
   if (hash === '#/player') return 'player';
   if (hash === '#/trainer') return 'trainer-auth';
@@ -39,6 +40,16 @@ export default function App() {
     const onHashChange = () => setRoute(getRouteFromHash());
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const registrationTimer = window.setTimeout(() => {
+      void navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
+        console.error('[push] service worker registration failed', error);
+      });
+    }, 0);
+    return () => window.clearTimeout(registrationTimer);
   }, []);
 
   useEffect(() => {
@@ -119,10 +130,16 @@ export default function App() {
 
   if (route === 'player-invite') {
     return (
-      <PlayerInviteSetup
-        onComplete={() => {
-          window.location.hash = '#/player';
-          setRoute('player');
+      <InvitePasswordSetup
+        onComplete={(invitedTeam) => {
+          if (invitedTeam) {
+            setTeam(invitedTeam);
+            window.location.hash = '#/dashboard';
+            setRoute('trainer-dashboard');
+          } else {
+            window.location.hash = '#/player';
+            setRoute('player');
+          }
         }}
       />
     );
@@ -239,8 +256,9 @@ export default function App() {
   );
 }
 
-function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
+function InvitePasswordSetup({ onComplete }: { onComplete: (team?: Team) => void }) {
   const [sessionReady, setSessionReady] = useState(false);
+  const [role, setRole] = useState<'player' | 'trainer'>('player');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -249,10 +267,16 @@ function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
   useEffect(() => {
     let active = true;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active && session) setSessionReady(true);
+      if (active && session) {
+        setRole(session.user.user_metadata?.invite_role === 'trainer' ? 'trainer' : 'player');
+        setSessionReady(true);
+      }
     });
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (active && session) setSessionReady(true);
+      if (active && session) {
+        setRole(session.user.user_metadata?.invite_role === 'trainer' ? 'trainer' : 'player');
+        setSessionReady(true);
+      }
     });
     return () => {
       active = false;
@@ -278,6 +302,23 @@ function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
       setSaving(false);
       return;
     }
+
+    if (role === 'trainer') {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: invitedTeam, error: teamError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('owner_id', user?.id ?? '')
+        .maybeSingle();
+      if (teamError || !invitedTeam) {
+        setError('Laget kunde inte hittas. Kontakta administratören.');
+        setSaving(false);
+        return;
+      }
+      onComplete(invitedTeam as Team);
+      return;
+    }
+
     onComplete();
   };
 
@@ -289,7 +330,9 @@ function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
             <Lock className="h-7 w-7" />
           </div>
           <h1 className="text-2xl font-bold text-black">Skapa ditt lösenord</h1>
-          <p className="mt-2 text-sm text-gray-500">Välj ett personligt lösenord för ditt spelarkonto.</p>
+          <p className="mt-2 text-sm text-gray-500">
+            {role === 'trainer' ? 'Välj ett personligt lösenord för ditt tränarkonto.' : 'Välj ett personligt lösenord för ditt spelarkonto.'}
+          </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
           <div>
@@ -320,7 +363,11 @@ function PlayerInviteSetup({ onComplete }: { onComplete: () => void }) {
               className="w-full rounded-lg border border-gray-300 px-3 py-3 text-base focus:border-black focus:outline-none focus:ring-2 focus:ring-black/10 disabled:bg-gray-50"
             />
           </div>
-          {!sessionReady && <p className="text-sm text-amber-700">Inbjudningslänken är ogiltig eller har gått ut. Be tränaren skicka en ny.</p>}
+          {!sessionReady && (
+            <p className="text-sm text-amber-700">
+              Inbjudningslänken är ogiltig eller har gått ut. Be {role === 'trainer' ? 'administratören' : 'tränaren'} skicka en ny.
+            </p>
+          )}
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
