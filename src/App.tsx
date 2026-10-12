@@ -303,6 +303,10 @@ function InvitePasswordSetup({ onComplete }: { onComplete: (team?: Team) => void
       return;
     }
 
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete('invite');
+    window.history.replaceState(null, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+
     if (role === 'trainer') {
       const { data: { user } } = await supabase.auth.getUser();
       const { data: invitedTeam, error: teamError } = await supabase
