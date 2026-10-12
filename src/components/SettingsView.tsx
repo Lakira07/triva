@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Settings, Save, Loader2, CheckCircle2, ListChecks, Heart } from 'lucide-react';
 import { supabase, type AppSettings } from '@/lib/supabase';
+import CoachRemindersView from '@/components/CoachRemindersView';
 
-export default function SettingsView({ teamId }: { teamId: string }) {
+export default function SettingsView({ teamId, trainerCode }: { teamId: string; trainerCode: string }) {
   const [surveyRequired, setSurveyRequired] = useState(1);
   const [wellbeingRequired, setWellbeingRequired] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -133,6 +134,7 @@ export default function SettingsView({ teamId }: { teamId: string }) {
           )}
         </div>
       </div>
+      <CoachRemindersView teamId={teamId} trainerCode={trainerCode} />
     </div>
   );
 }

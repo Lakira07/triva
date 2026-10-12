@@ -168,6 +168,7 @@ export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
 export interface TrainingSession {
   id: string;
   team_id: string;
+  parent_session_id: string | null;
   title: string;
   session_type: SessionType;
   scheduled_at: string;

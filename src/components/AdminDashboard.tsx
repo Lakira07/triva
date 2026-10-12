@@ -462,7 +462,7 @@ export default function AdminDashboard({ team, onLogout }: AdminDashboardProps) 
       {tab === 'messages' && <ChatPrototype role="coach" teamId={team.id} trainerCode={team.trainer_code} />}
 
       {/* Settings tab */}
-      {tab === 'settings' && <SettingsView teamId={team.id} />}
+      {tab === 'settings' && <SettingsView teamId={team.id} trainerCode={team.trainer_code} />}
 
       {/* Responses tab */}
       {tab === 'responses' && (

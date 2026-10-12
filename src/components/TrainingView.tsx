@@ -7,7 +7,6 @@ import {
   Loader2,
   Trash2,
   X,
-  Users,
   User,
   ChevronRight,
   TrendingUp,
@@ -24,7 +23,6 @@ import {
   type TrainingAssignment,
   type TrainingCompletion,
   type DevelopmentGoal,
-  type SessionType,
   AREA_LABELS,
   SESSION_TYPE_LABELS,
 } from '@/lib/supabase';
@@ -34,12 +32,12 @@ interface SessionWithDetails extends TrainingSession {
   assignments: TrainingAssignment[];
   completions: TrainingCompletion[];
   goal: DevelopmentGoal | null;
+  subSessions: SessionWithDetails[];
 }
 
 export default function TrainingView({ teamId }: { teamId: string }) {
   const [sessions, setSessions] = useState<SessionWithDetails[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [goals, setGoals] = useState<DevelopmentGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [selectedSession, setSelectedSession] = useState<SessionWithDetails | null>(null);
@@ -59,16 +57,22 @@ export default function TrainingView({ teamId }: { teamId: string }) {
     const cData = (compData || []) as TrainingCompletion[];
     const gData = (goalData || []) as DevelopmentGoal[];
 
-    const withDetails: SessionWithDetails[] = sData.map((s) => ({
+    const sessionDetails = sData.map((s) => ({
       ...s,
       assignments: aData.filter((a) => a.session_id === s.id),
       completions: cData.filter((c) => c.session_id === s.id),
       goal: gData.find((g) => g.id === s.goal_id) || null,
+      subSessions: [],
     }));
+    const withDetails: SessionWithDetails[] = sessionDetails
+      .filter((s) => !s.parent_session_id)
+      .map((s) => ({
+        ...s,
+        subSessions: sessionDetails.filter((sub) => sub.parent_session_id === s.id) as SessionWithDetails[],
+      }));
 
     setSessions(withDetails);
     setPlayers((playerData || []) as Player[]);
-    setGoals(gData);
     setLoading(false);
   }, [teamId]);
 
@@ -82,14 +86,10 @@ export default function TrainingView({ teamId }: { teamId: string }) {
       .insert({
         team_id: teamId,
         title: data.title,
-        session_type: data.session_type,
+        session_type: 'lag',
         scheduled_at: data.scheduled_at,
-        planned_duration_min: data.planned_duration_min,
-        planned_rpe: data.planned_rpe,
-        content: data.content || null,
-        purpose: data.purpose || null,
-        exercises: data.exercises || null,
-        goal_id: data.goal_id || null,
+        planned_duration_min: 60,
+        planned_rpe: 5,
       })
       .select()
       .single();
@@ -99,16 +99,42 @@ export default function TrainingView({ teamId }: { teamId: string }) {
       return;
     }
 
-    const assignments: { session_id: string; player_id: string | null; is_all_team: boolean }[] = [];
-    if (data.assign_all) {
-      assignments.push({ session_id: session.id, player_id: null, is_all_team: true });
-    } else {
-      data.assigned_player_ids.forEach((pid) => {
-        assignments.push({ session_id: session.id, player_id: pid, is_all_team: false });
-      });
-    }
-    if (assignments.length > 0) {
-      await supabase.from('training_assignments').insert(assignments);
+    await supabase.from('training_assignments').insert({
+      session_id: session.id,
+      player_id: null,
+      is_all_team: true,
+    });
+
+    for (const subSession of data.sub_sessions) {
+      const { data: createdSubSession, error: subSessionError } = await supabase
+        .from('training_sessions')
+        .insert({
+          team_id: teamId,
+          parent_session_id: session.id,
+          title: subSession.title,
+          session_type: subSession.player_ids.length === 1 ? 'individuell' : 'grupp',
+          scheduled_at: data.scheduled_at,
+          planned_duration_min: subSession.planned_duration_min,
+          planned_rpe: subSession.planned_rpe,
+          purpose: subSession.purpose || null,
+          content: subSession.content || null,
+          exercises: subSession.exercises || null,
+        })
+        .select()
+        .single();
+
+      if (subSessionError) {
+        console.error('Error creating player sub-session:', subSessionError);
+        continue;
+      }
+
+      await supabase.from('training_assignments').insert(
+        subSession.player_ids.map((playerId) => ({
+          session_id: createdSubSession.id,
+          player_id: playerId,
+          is_all_team: false,
+        })),
+      );
     }
 
     setShowForm(false);
@@ -184,7 +210,6 @@ export default function TrainingView({ teamId }: { teamId: string }) {
       {showForm ? (
         <SessionForm
           players={players}
-          goals={goals}
           onSave={addSession}
           onCancel={() => setShowForm(false)}
         />
@@ -236,16 +261,18 @@ export default function TrainingView({ teamId }: { teamId: string }) {
 
 interface SessionFormData {
   title: string;
-  session_type: SessionType;
   scheduled_at: string;
+  sub_sessions: PlayerSubSessionFormData[];
+}
+
+interface PlayerSubSessionFormData {
+  title: string;
   planned_duration_min: number;
   planned_rpe: number;
-  content: string;
   purpose: string;
+  content: string;
   exercises: string;
-  goal_id: string | null;
-  assign_all: boolean;
-  assigned_player_ids: string[];
+  player_ids: string[];
 }
 
 function LoadSummary({
@@ -414,27 +441,17 @@ function LoadSummary({
 
 function SessionForm({
   players,
-  goals,
   onSave,
   onCancel,
 }: {
   players: Player[];
-  goals: DevelopmentGoal[];
   onSave: (data: SessionFormData) => void;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState('');
-  const [sessionType, setSessionType] = useState<SessionType>('lag');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [duration, setDuration] = useState('60');
-  const [rpe, setRpe] = useState('5');
-  const [content, setContent] = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [exercises, setExercises] = useState('');
-  const [goalId, setGoalId] = useState<string | null>(null);
-  const [assignAll, setAssignAll] = useState(true);
-  const [assignedIds, setAssignedIds] = useState<string[]>([]);
+  const [subSessions, setSubSessions] = useState<PlayerSubSessionFormData[]>([]);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
@@ -443,22 +460,23 @@ function SessionForm({
     const scheduledAt = new Date(`${date}T${time}`).toISOString();
     await onSave({
       title: title.trim(),
-      session_type: sessionType,
       scheduled_at: scheduledAt,
-      planned_duration_min: parseInt(duration) || 60,
-      planned_rpe: parseInt(rpe) || 5,
-      content: content.trim(),
-      purpose: purpose.trim(),
-      exercises: exercises.trim(),
-      goal_id: goalId,
-      assign_all: assignAll,
-      assigned_player_ids: assignedIds,
+      sub_sessions: subSessions,
     });
     setSaving(false);
   };
 
-  const togglePlayer = (id: string) => {
-    setAssignedIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+  const updateSubSession = (index: number, updates: Partial<PlayerSubSessionFormData>) => {
+    setSubSessions((current) => current.map((subSession, i) => i === index ? { ...subSession, ...updates } : subSession));
+  };
+
+  const toggleSubSessionPlayer = (index: number, playerId: string) => {
+    const subSession = subSessions[index];
+    updateSubSession(index, {
+      player_ids: subSession.player_ids.includes(playerId)
+        ? subSession.player_ids.filter((id) => id !== playerId)
+        : [...subSession.player_ids, playerId],
+    });
   };
 
   return (
@@ -472,7 +490,7 @@ function SessionForm({
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Titel</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1.5">Passnamn (gemensamt för alla)</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -480,23 +498,6 @@ function SessionForm({
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
             autoFocus
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Typ av träning</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['lag', 'grupp', 'individuell'] as SessionType[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setSessionType(t)}
-                className={`py-2.5 rounded-lg border-2 text-sm font-bold transition-colors ${
-                  sessionType === t ? 'border-black bg-gray-50 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                {SESSION_TYPE_LABELS[t]}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -520,132 +521,134 @@ function SessionForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5">Längd (min)</label>
-            <input
-              type="number"
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-              min={1}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5">Planerad RPE (1–10)</label>
-            <input
-              type="number"
-              value={rpe}
-              onChange={(e) => setRpe(e.target.value)}
-              min={1}
-              max={10}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-3">
-          <p className="text-xs text-gray-500 font-medium">
-            Planerad belastning: <span className="font-bold text-black">{(parseInt(duration) || 60) * (parseInt(rpe) || 5)} AU</span>
-            <span className="text-gray-400"> (min × RPE)</span>
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Syfte</label>
-          <input
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-            placeholder="T.ex. Förbättra passningsprecision under press"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Innehåll</label>
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Beskriv träningsinnehållet..."
-            rows={2}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Övningar & instruktioner</label>
-          <textarea
-            value={exercises}
-            onChange={(e) => setExercises(e.target.value)}
-            placeholder="Övningar, instruktioner, video eller material..."
-            rows={3}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none"
-          />
-        </div>
-
-        {goals.length > 0 && (
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5">Koppla till IUP-mål (valfritt)</label>
-            <select
-              value={goalId || ''}
-              onChange={(e) => setGoalId(e.target.value || null)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-            >
-              <option value="">Inget mål valt</option>
-              {goals.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {AREA_LABELS[g.area]} — {g.target_description.slice(0, 50)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1.5">Tilldela träningen</label>
-          <div className="flex gap-2 mb-3">
-            <button
-              onClick={() => setAssignAll(true)}
-              className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-bold transition-colors ${
-                assignAll ? 'border-black bg-gray-50 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-            >
-              <Users className="w-4 h-4 inline mr-1" /> Hela laget
-            </button>
-            <button
-              onClick={() => setAssignAll(false)}
-              className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-bold transition-colors ${
-                !assignAll ? 'border-black bg-gray-50 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-            >
-              <User className="w-4 h-4 inline mr-1" />&nbsp;Välj spelare
-            </button>
-          </div>
-          {!assignAll && (
-            <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
-              {players.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={assignedIds.includes(p.id)}
-                    onChange={() => togglePlayer(p.id)}
-                    className="accent-black"
-                  />
-                  <span className="text-sm text-gray-700">{p.name}</span>
-                  {p.position && <span className="text-xs text-gray-400">· {p.position}</span>}
-                </label>
-              ))}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h4 className="text-sm font-bold text-gray-800">Spelarspecifika pass</h4>
+              <p className="text-xs text-gray-500 mt-0.5">Lägg till egna övningar för utvalda spelare.</p>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setSubSessions((current) => [...current, {
+                title: '',
+                planned_duration_min: 60,
+                planned_rpe: 5,
+                purpose: '',
+                content: '',
+                exercises: '',
+                player_ids: [],
+              }])}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-700 hover:border-black hover:text-black"
+            >
+              <Plus className="w-3.5 h-3.5" /> Lägg till
+            </button>
+          </div>
+          <div className="space-y-3">
+            {subSessions.map((subSession, index) => (
+              <div key={index} className="rounded-lg border border-gray-200 p-3 space-y-3">
+                <label className="block text-xs font-bold text-gray-500">
+                  Spelarspecifikt passnamn
+                </label>
+                <div className="flex items-start gap-2">
+                  <input
+                    value={subSession.title}
+                    onChange={(e) => updateSubSession(index, { title: e.target.value })}
+                    placeholder="T.ex. Extra avslutsträning"
+                    className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSubSessions((current) => current.filter((_, i) => i !== index))}
+                    aria-label="Ta bort spelarpass"
+                    className="p-2 text-gray-400 hover:text-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs font-bold text-gray-500">
+                    Längd (min)
+                    <input
+                      type="number"
+                      min={1}
+                      value={subSession.planned_duration_min}
+                      onChange={(e) => updateSubSession(index, { planned_duration_min: parseInt(e.target.value) || 1 })}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-normal text-gray-800"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-gray-500">
+                    RPE (1–10)
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={subSession.planned_rpe}
+                      onChange={(e) => updateSubSession(index, { planned_rpe: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) })}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-normal text-gray-800"
+                    />
+                  </label>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 font-medium">
+                    Planerad belastning: <span className="font-bold text-black">{subSession.planned_duration_min * subSession.planned_rpe} AU</span>
+                    <span className="text-gray-400"> (min × RPE)</span>
+                  </p>
+                </div>
+                <label className="block text-xs font-bold text-gray-500">
+                  Syfte
+                  <input
+                    value={subSession.purpose}
+                    onChange={(e) => updateSubSession(index, { purpose: e.target.value })}
+                    placeholder="T.ex. Förbättra passningsprecision under press"
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-normal text-gray-800"
+                  />
+                </label>
+                <label className="block text-xs font-bold text-gray-500">
+                  Innehåll
+                  <textarea
+                    value={subSession.content}
+                    onChange={(e) => updateSubSession(index, { content: e.target.value })}
+                    placeholder="Beskriv träningsinnehållet..."
+                    rows={2}
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-normal text-gray-800 resize-none"
+                  />
+                </label>
+                <label className="block text-xs font-bold text-gray-500">
+                  Övningar & instruktioner
+                  <textarea
+                    value={subSession.exercises}
+                    onChange={(e) => updateSubSession(index, { exercises: e.target.value })}
+                    placeholder="Övningar, instruktioner, video eller material..."
+                    rows={3}
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-normal text-gray-800 resize-none"
+                  />
+                </label>
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1.5">Spelare</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1 border border-gray-200 rounded-lg p-2">
+                    {players.map((player) => (
+                      <label key={player.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={subSession.player_ids.includes(player.id)}
+                          onChange={() => toggleSubSessionPlayer(index, player.id)}
+                          className="accent-black"
+                        />
+                        <span className="text-sm text-gray-700">{player.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {subSession.player_ids.length === 0 && <p className="text-xs text-amber-700 mt-1">Välj minst en spelare.</p>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="flex gap-2 pt-2">
           <button
             onClick={handleSubmit}
-            disabled={!title.trim() || !date || !time || saving}
+            disabled={!title.trim() || !date || !time || saving || subSessions.some((sub) => !sub.title.trim() || sub.player_ids.length === 0)}
             className="flex items-center gap-2 bg-black hover:bg-gray-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -799,6 +802,42 @@ function SessionDetail({
           </div>
         )}
       </div>
+
+      {session.subSessions.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm mb-4">
+          <h4 className="font-bold text-black mb-3">Spelarspecifika pass</h4>
+          <div className="space-y-3">
+            {session.subSessions.map((subSession) => {
+              const playerNames = players
+                .filter((player) => subSession.assignments.some((assignment) => assignment.player_id === player.id))
+                .map((player) => player.name);
+              return (
+                <div key={subSession.id} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">{subSession.title}</p>
+                      <p className="text-xs text-gray-500 mt-1">{playerNames.join(', ')} · {subSession.planned_duration_min} min · RPE {subSession.planned_rpe}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {subSession.completions.length}/{playerNames.length} genomförda
+                      </p>
+                    </div>
+                    <p className="text-xs font-bold text-gray-600">{subSession.planned_duration_min * subSession.planned_rpe} AU</p>
+                  </div>
+                  {subSession.purpose && (
+                    <p className="text-sm text-gray-700 mt-2"><span className="font-bold">Syfte:</span> {subSession.purpose}</p>
+                  )}
+                  {subSession.content && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap mt-2"><span className="font-bold">Innehåll:</span> {subSession.content}</p>
+                  )}
+                  {subSession.exercises && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap mt-2"><span className="font-bold">Övningar & instruktioner:</span> {subSession.exercises}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <AIInsightCard
         title="AI-analys av passet"

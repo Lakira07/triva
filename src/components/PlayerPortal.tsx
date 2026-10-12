@@ -21,6 +21,7 @@ import {
   CalendarDays,
   BarChart3,
   MessageCircle,
+  Bell,
 } from 'lucide-react';
 import { supabase, type Player, type Question, type Team, type AppSettings, type WellbeingEntry, type DevelopmentGoal, type Assessment, type TrainingSession, type TrainingCompletion, type TrainingAssignment, type DevelopmentArea, type IupQuarterlyPlan, type IupQuarterlyPlanChange, WELLBEING_METRICS, AREA_LABELS, SESSION_TYPE_LABELS } from '@/lib/supabase';
 import IupChangeHistory from '@/components/IupChangeHistory';
@@ -52,7 +53,18 @@ const METRIC_COLORS: Record<string, string> = {
 };
 
 type View = 'account-login' | 'team-login' | 'player-login' | 'hub' | 'survey' | 'wellbeing' | 'survey-done' | 'wellbeing-done';
-type PlayerSection = 'dashboard' | 'iup' | 'training' | 'status' | 'development' | 'messages';
+type PlayerSection = 'dashboard' | 'iup' | 'training' | 'status' | 'development' | 'messages' | 'reminders';
+
+interface PlayerReminder {
+  id: string;
+  reminder_type: 'wellbeing' | 'training_load';
+  training_session_id: string | null;
+  title: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+  completed_at: string | null;
+}
 
 function startOfWeek(d: Date): Date {
   const date = new Date(d);
@@ -67,6 +79,8 @@ export default function PlayerPortal() {
   const [team, setTeam] = useState<Team | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [isAccountPlayer, setIsAccountPlayer] = useState(false);
+  const [reminders, setReminders] = useState<PlayerReminder[]>([]);
+  const [reminderSessionToOpen, setReminderSessionToOpen] = useState<string | null>(null);
   const [view, setView] = useState<View>('account-login');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ weekly_survey_required: 1, weekly_wellbeing_required: 1 });
@@ -98,6 +112,25 @@ export default function PlayerPortal() {
       .limit(7);
     setRecentWellbeing((data || []) as WellbeingEntry[]);
   }, [team]);
+
+  const fetchReminders = useCallback(async () => {
+    if (!team || !player || !isAccountPlayer) {
+      setReminders([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('player_reminders')
+      .select('id, reminder_type, training_session_id, title, body, created_at, read_at, completed_at')
+      .eq('team_id', team.id)
+      .eq('player_id', player.id)
+      .is('completed_at', null)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching reminders:', error);
+      return;
+    }
+    setReminders((data ?? []) as PlayerReminder[]);
+  }, [isAccountPlayer, player, team]);
 
   const loadData = useCallback(async () => {
     if (!team) return;
@@ -165,6 +198,16 @@ export default function PlayerPortal() {
     void Promise.all([fetchProgress(player.id), fetchRecentWellbeing(player.id)]);
   }, [fetchProgress, fetchRecentWellbeing, player, team]);
 
+  useEffect(() => {
+    void fetchReminders();
+  }, [fetchReminders]);
+
+  useEffect(() => {
+    if (!isAccountPlayer) return;
+    const timer = window.setInterval(() => void fetchReminders(), 15000);
+    return () => window.clearInterval(timer);
+  }, [fetchReminders, isAccountPlayer]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setTeam(null);
@@ -229,7 +272,33 @@ export default function PlayerPortal() {
   };
 
   const refreshAfterSubmit = async () => {
-    if (player) await Promise.all([fetchProgress(player.id), fetchRecentWellbeing(player.id)]);
+    if (player) await Promise.all([fetchProgress(player.id), fetchRecentWellbeing(player.id), fetchReminders()]);
+  };
+
+  const completeReminder = async (reminderType: PlayerReminder['reminder_type'], sessionId?: string) => {
+    if (!player || !team || !isAccountPlayer) return;
+    let query = supabase.from('player_reminders')
+      .update({ completed_at: new Date().toISOString() })
+      .eq('team_id', team.id)
+      .eq('player_id', player.id)
+      .eq('reminder_type', reminderType)
+      .is('completed_at', null);
+    if (reminderType === 'training_load' && sessionId) query = query.eq('training_session_id', sessionId);
+    const { error } = await query;
+    if (error) console.error('Error completing reminder:', error);
+    await fetchReminders();
+  };
+
+  const openReminder = async (reminder: PlayerReminder) => {
+    if (!reminder.read_at) {
+      await supabase.from('player_reminders').update({ read_at: new Date().toISOString() }).eq('id', reminder.id);
+    }
+    if (reminder.reminder_type === 'wellbeing') {
+      setView('wellbeing');
+    } else if (reminder.training_session_id) {
+      setReminderSessionToOpen(reminder.training_session_id);
+      setSection('training');
+    }
   };
 
   if (loading) {
@@ -244,7 +313,6 @@ export default function PlayerPortal() {
     return (
       <PlayerAccountLoginScreen
         onLogin={handleAccountLogin}
-        onLegacyLogin={() => setView('team-login')}
       />
     );
   }
@@ -324,7 +392,10 @@ export default function PlayerPortal() {
         player={player}
         teamId={team!.id}
         onBack={() => setView('hub')}
-        onSubmitted={() => setView('wellbeing-done')}
+        onSubmitted={async () => {
+          await completeReminder('wellbeing');
+          setView('wellbeing-done');
+        }}
       />
     );
   }
@@ -342,6 +413,7 @@ export default function PlayerPortal() {
     { id: 'status', label: 'Min status', icon: Heart },
     { id: 'development', label: 'Utveckling', icon: BarChart3 },
     { id: 'messages', label: 'Meddelanden', icon: MessageCircle },
+    { id: 'reminders', label: `Påminnelser${reminders.length ? ` (${reminders.length})` : ''}`, icon: Bell },
   ];
 
   return (
@@ -461,6 +533,11 @@ export default function PlayerPortal() {
           <PlayerTrainingSection
             playerId={player.id}
             teamId={team!.id}
+            reminderSessionId={reminderSessionToOpen}
+            onReminderCompleted={async (sessionId) => {
+              await completeReminder('training_load', sessionId);
+              setReminderSessionToOpen(null);
+            }}
           />
         )}
         {section === 'status' && (
@@ -483,12 +560,45 @@ export default function PlayerPortal() {
         )}
         {section === 'development' && <PlayerDevelopmentSection playerId={player.id} recentWellbeing={recentWellbeing} />}
         {section === 'messages' && <ChatPrototype role="player" teamId={team!.id} playerId={player.id} canMessage={isAccountPlayer} />}
+        {section === 'reminders' && <PlayerRemindersView reminders={reminders} onOpen={openReminder} />}
       </main>
     </div>
   );
 }
 
 // --- PLAYER IUP SECTION ---
+
+function PlayerRemindersView({
+  reminders,
+  onOpen,
+}: {
+  reminders: PlayerReminder[];
+  onOpen: (reminder: PlayerReminder) => void;
+}) {
+  if (reminders.length === 0) {
+    return <div className="max-w-3xl rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 sm:p-8"><p className="text-sm font-semibold text-gray-700">Inga påminnelser just nu</p><p className="mt-1 text-sm leading-6 text-gray-500">Nya påminnelser från tränaren visas här.</p></div>;
+  }
+
+  return (
+    <section className="max-w-3xl">
+      <SectionHeading icon={<Bell className="h-5 w-5" />} eyebrow="Från tränaren" title="Påminnelser" description="Öppna formuläret direkt från en påminnelse. Den försvinner när rapporten är inskickad." />
+      <div className="mt-5 space-y-3">
+        {reminders.map((reminder) => (
+          <article key={reminder.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-bold text-gray-900">{reminder.title}</p>
+              <p className="mt-1 text-sm leading-5 text-gray-600">{reminder.body}</p>
+              <p className="mt-2 text-xs text-gray-400">{new Date(reminder.created_at).toLocaleString('sv-SE')}</p>
+            </div>
+            <button onClick={() => void onOpen(reminder)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-[#234633] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#183525]">
+              {reminder.reminder_type === 'wellbeing' ? 'Öppna välmåenderapport' : 'Öppna belastningsformulär'}
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: string }) {
   const [goals, setGoals] = useState<DevelopmentGoal[]>([]);
@@ -821,9 +931,13 @@ function PlayerQuarterContribution({
 function PlayerTrainingSection({
   playerId,
   teamId,
+  reminderSessionId,
+  onReminderCompleted,
 }: {
   playerId: string;
   teamId: string;
+  reminderSessionId: string | null;
+  onReminderCompleted: (sessionId: string) => Promise<void>;
 }) {
   const [allSessions, setAllSessions] = useState<TrainingSession[]>([]);
   const [assignments, setAssignments] = useState<TrainingAssignment[]>([]);
@@ -854,6 +968,12 @@ function PlayerTrainingSection({
       setLoading(false);
     })();
   }, [playerId, teamId]);
+
+  useEffect(() => {
+    if (loading || !reminderSessionId) return;
+    const isAssigned = assignments.some((assignment) => assignment.session_id === reminderSessionId);
+    if (isAssigned) setCompletingSessionId(reminderSessionId);
+  }, [assignments, loading, reminderSessionId]);
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>;
 
@@ -946,6 +1066,7 @@ function PlayerTrainingSection({
                             await refetchCompletions();
                             setCompletingSessionId(null);
                             setSavedSessionId(s.id);
+                            if (reminderSessionId === s.id) await onReminderCompleted(s.id);
                             setTimeout(() => setSavedSessionId(null), 4000);
                           }}
                         />
@@ -1269,10 +1390,8 @@ function MetricTrend({ label, entries, metric }: { label: string; entries: Wellb
 
 function PlayerAccountLoginScreen({
   onLogin,
-  onLegacyLogin,
 }: {
   onLogin: (email: string, password: string) => Promise<string | null>;
-  onLegacyLogin: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1332,9 +1451,6 @@ function PlayerAccountLoginScreen({
             {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <><LogIn className="h-4 w-4" /> Logga in</>}
           </button>
         </form>
-        <button onClick={onLegacyLogin} className="mt-4 w-full py-2 text-sm font-semibold text-gray-500 hover:text-gray-900">
-          Har du inte fått en konto-inbjudan? Använd lagkod
-        </button>
       </div>
     </div>
   );
