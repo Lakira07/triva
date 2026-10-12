@@ -1,7 +1,7 @@
 import type { IupQuarterlyPlanChange } from '@/lib/supabase';
 
 const FIELD_LABELS: Record<string, string> = {
-  focus: 'Fokus för kvartalet',
+  focus: 'Fokus för perioden',
   start_month: 'Startmånad',
   end_month: 'Slutmånad',
   what_to_develop: 'Utvecklingsmål',
@@ -55,7 +55,7 @@ export default function IupChangeHistory({ changes }: { changes: IupQuarterlyPla
               </time>
             </div>
             {wasCreated && changedFields.length === 0 ? (
-              <p className="mt-1 text-xs text-gray-500">Kvartalsplan skapad</p>
+              <p className="mt-1 text-xs text-gray-500">Periodplan skapad</p>
             ) : changedFields.length > 0 ? (
               <ul className="mt-1 space-y-0.5">
                 {changedFields.map((field) => <li key={field} className="text-xs text-gray-500">{field}</li>)}

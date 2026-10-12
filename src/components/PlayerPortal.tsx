@@ -721,16 +721,18 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
                       <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${g.is_active ? 'bg-white text-[#315c43]' : 'bg-gray-200 text-gray-600'}`}>{g.is_active ? 'Aktivt' : 'Avslutat'}</span>
                     </div>
                     <div className="mt-4 space-y-3">
-                      {Array.from({ length: 4 }, (_, index) => {
-                        const quarter = index + 1;
-                        const plan = quarterlyPlans.find((item) => item.goal_id === g.id && item.quarter === quarter);
+                      {quarterlyPlans
+                        .filter((item) => item.goal_id === g.id)
+                        .sort((first, second) => first.quarter - second.quarter)
+                        .map((plan, index) => {
                         return (
                           <PlayerQuarterContribution
-                            key={quarter}
+                            key={plan.quarter}
                             goal={g}
-                            quarter={quarter}
+                            quarter={plan.quarter}
+                            periodNumber={index + 1}
                             plan={plan}
-                            changes={planChanges.filter((change) => change.goal_id === g.id && change.plan_id === plan?.id)}
+                            changes={planChanges.filter((change) => change.goal_id === g.id && change.plan_id === plan.id)}
                             playerId={playerId}
                             teamId={teamId}
                             onSaved={refreshIup}
@@ -768,6 +770,7 @@ function PlayerIUPSection({ playerId, teamId }: { playerId: string; teamId: stri
 function PlayerQuarterContribution({
   goal,
   quarter,
+  periodNumber,
   plan,
   changes,
   playerId,
@@ -776,6 +779,7 @@ function PlayerQuarterContribution({
 }: {
   goal: DevelopmentGoal;
   quarter: number;
+  periodNumber: number;
   plan?: IupQuarterlyPlan;
   changes: IupQuarterlyPlanChange[];
   playerId: string;
@@ -785,12 +789,13 @@ function PlayerQuarterContribution({
   const [expanded, setExpanded] = useState(false);
   const [playerGoal, setPlayerGoal] = useState(plan?.player_goal ?? '');
   const [playerEvaluation, setPlayerEvaluation] = useState(plan?.player_evaluation ?? '');
-  const [focus, setFocus] = useState(plan?.focus ?? `Kvartal ${quarter}`);
+  const [focus, setFocus] = useState(plan?.focus ?? `Period ${quarter}`);
   const [whatToDevelop, setWhatToDevelop] = useState(plan?.what_to_develop ?? '');
   const [howToDevelop, setHowToDevelop] = useState(plan?.how_to_develop ?? '');
   const [measurement, setMeasurement] = useState(plan?.measurement ?? '');
-  const [startMonth, setStartMonth] = useState(plan?.start_month ?? (quarter - 1) * 3 + 1);
-  const [endMonth, setEndMonth] = useState(plan?.end_month ?? quarter * 3);
+  const defaultStartMonth = ((quarter - 1) % 4) * 3 + 1;
+  const [startMonth, setStartMonth] = useState(plan?.start_month ?? defaultStartMonth);
+  const [endMonth, setEndMonth] = useState(plan?.end_month ?? defaultStartMonth + 2);
   const [status, setStatus] = useState<IupQuarterlyPlan['status']>(plan?.status ?? 'ej_paborjat');
   const [selectedSkills, setSelectedSkills] = useState(plan?.selected_skills ?? {});
   const [saving, setSaving] = useState(false);
@@ -799,12 +804,12 @@ function PlayerQuarterContribution({
   useEffect(() => {
     setPlayerGoal(plan?.player_goal ?? '');
     setPlayerEvaluation(plan?.player_evaluation ?? '');
-    setFocus(plan?.focus ?? `Kvartal ${quarter}`);
+    setFocus(plan?.focus ?? `Period ${quarter}`);
     setWhatToDevelop(plan?.what_to_develop ?? '');
     setHowToDevelop(plan?.how_to_develop ?? '');
     setMeasurement(plan?.measurement ?? '');
-    setStartMonth(plan?.start_month ?? (quarter - 1) * 3 + 1);
-    setEndMonth(plan?.end_month ?? quarter * 3);
+    setStartMonth(plan?.start_month ?? defaultStartMonth);
+    setEndMonth(plan?.end_month ?? defaultStartMonth + 2);
     setStatus(plan?.status ?? 'ej_paborjat');
     setSelectedSkills(plan?.selected_skills ?? {});
   }, [plan, quarter]);
@@ -819,7 +824,7 @@ function PlayerQuarterContribution({
     setFeedback(null);
 
     const playerFields = {
-      focus: focus.trim() || `Kvartal ${quarter}`,
+      focus: focus.trim() || `Period ${quarter}`,
       start_month: startMonth,
       end_month: endMonth,
       what_to_develop: whatToDevelop.trim() || null,
@@ -865,7 +870,7 @@ function PlayerQuarterContribution({
         <span className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-lg font-extrabold">{quarter}</span>
           <span className="min-w-0">
-            <span className="block text-sm font-extrabold">Kvartal {quarter}</span>
+            <span className="block text-sm font-extrabold">Period {periodNumber}</span>
             <span className="mt-0.5 block truncate text-xs font-medium text-green-50/75">{monthLabels[startMonth - 1]}–{monthLabels[endMonth - 1]}</span>
           </span>
         </span>
@@ -878,9 +883,9 @@ function PlayerQuarterContribution({
       {expanded && (
         <div className="space-y-5 border-t border-gray-200 bg-[#f7f9f6] p-4 sm:p-5">
           <div className="space-y-4">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-[#557461]">Plan för kvartalet</p>
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[#557461]">Plan för perioden</p>
             <label className="block">
-              <span className="mb-1.5 block text-sm font-bold text-gray-800">Fokus för kvartalet</span>
+              <span className="mb-1.5 block text-sm font-bold text-gray-800">Fokus för perioden</span>
               <input value={focus} onChange={(event) => setFocus(event.target.value)} placeholder="Exempel: Mottagning med insidan" className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm shadow-sm focus:border-[#315c43] focus:outline-none focus:ring-2 focus:ring-[#d7e3d9]" />
             </label>
             <label className="block">
@@ -912,7 +917,7 @@ function PlayerQuarterContribution({
               {!plan.coach_evaluation && <p className="mt-2 text-sm text-gray-500">Tränaren har inte lagt till någon utvärdering ännu.</p>}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Tränaren har inte lagt upp en kvartalsplan ännu. Du kan ändå skriva ett eget mål.</p>
+            <p className="text-sm text-gray-500">Tränaren har inte lagt upp en plan för perioden ännu. Du kan ändå skriva ett eget mål.</p>
           )}
 
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

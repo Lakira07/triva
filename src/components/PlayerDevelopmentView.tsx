@@ -130,6 +130,13 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
     await fetchDevData(selectedPlayer!.id);
   };
 
+  const deleteQuarterlyPlan = async (planId: string): Promise<string | null> => {
+    const { error } = await supabase.from('iup_quarterly_plans').delete().eq('id', planId);
+    if (error) return error.message;
+    await fetchDevData(selectedPlayer!.id);
+    return null;
+  };
+
   const saveQuarterlyPlan = async (goalId: string, data: Partial<IupQuarterlyPlan>): Promise<string | null> => {
     const payload = {
       goal_id: goalId,
@@ -188,6 +195,7 @@ export default function PlayerDevelopmentView({ teamId }: { teamId: string }) {
         onAddGoalSubmit={addGoal}
         onCancelGoal={() => setShowGoalForm(false)}
         onSaveQuarterlyPlan={saveQuarterlyPlan}
+        onDeleteQuarterlyPlan={deleteQuarterlyPlan}
       />
     );
   }
@@ -231,6 +239,7 @@ function PlayerDetail({
   onAddGoalSubmit,
   onCancelGoal,
   onSaveQuarterlyPlan,
+  onDeleteQuarterlyPlan,
 }: {
   player: Player;
   devData: PlayerDevData;
@@ -241,6 +250,7 @@ function PlayerDetail({
   onAddGoalSubmit: (data: { area: DevelopmentArea; football_action: string; target_description: string }) => void;
   onCancelGoal: () => void;
   onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
+  onDeleteQuarterlyPlan: (planId: string) => Promise<string | null>;
 }) {
   const [selectedArea, setSelectedArea] = useState<DevelopmentArea>('teknik');
 
@@ -373,6 +383,7 @@ function PlayerDetail({
                   plans={devData.quarterlyPlans.filter((plan) => plan.goal_id === g.id)}
                   planChanges={devData.quarterlyPlanChanges.filter((change) => change.goal_id === g.id)}
                   onSaveQuarterlyPlan={onSaveQuarterlyPlan}
+                  onDeleteQuarterlyPlan={onDeleteQuarterlyPlan}
                 />
               </div>
             ))}
@@ -451,16 +462,37 @@ function QuarterlyPlanCard({
   plans,
   planChanges,
   onSaveQuarterlyPlan,
+  onDeleteQuarterlyPlan,
 }: {
   goal: DevelopmentGoal;
   plans: IupQuarterlyPlan[];
   planChanges: IupQuarterlyPlanChange[];
   onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
+  onDeleteQuarterlyPlan: (planId: string) => Promise<string | null>;
 }) {
-  const allPlans = Array.from({ length: 4 }, (_, index) => ({
-    quarter: index + 1,
-    current: plans.find((plan) => plan.quarter === index + 1),
-  }));
+  const [addingPeriod, setAddingPeriod] = useState(false);
+  const [addPeriodError, setAddPeriodError] = useState<string | null>(null);
+  const allPlans = [...plans]
+    .sort((first, second) => first.quarter - second.quarter)
+    .map((current, index) => ({ quarter: current.quarter, periodNumber: index + 1, current }));
+
+  const addPeriod = async () => {
+    if (addingPeriod) return;
+    const quarter = Math.max(0, ...plans.map((plan) => plan.quarter)) + 1;
+    const startMonth = ((quarter - 1) % 4) * 3 + 1;
+    setAddingPeriod(true);
+    setAddPeriodError(null);
+    const error = await onSaveQuarterlyPlan(goal.id, {
+      quarter,
+      focus: `Period ${quarter}`,
+      start_month: startMonth,
+      end_month: startMonth + 2,
+      selected_skills: {},
+      status: 'ej_paborjat',
+    });
+    setAddingPeriod(false);
+    if (error) setAddPeriodError(error);
+  };
 
   return (
     <div className="space-y-4">
@@ -469,16 +501,31 @@ function QuarterlyPlanCard({
         <span className="text-xs text-gray-500">{goal.target_description}</span>
       </div>
 
-      {allPlans.map(({ quarter, current }) => (
+      {allPlans.length === 0 && <p className="text-sm text-gray-500">Inga perioder har lagts till ännu.</p>}
+      {allPlans.map(({ quarter, periodNumber, current }) => (
         <QuarterPlanEditor
           key={quarter}
           goal={goal}
           quarter={quarter}
+          periodNumber={periodNumber}
           plan={current}
           planChanges={planChanges.filter((change) => change.plan_id === current?.id)}
           onSaveQuarterlyPlan={onSaveQuarterlyPlan}
+          onDeleteQuarterlyPlan={onDeleteQuarterlyPlan}
         />
       ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void addPeriod()}
+          disabled={addingPeriod}
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-black hover:text-black disabled:cursor-wait disabled:opacity-60"
+        >
+          {addingPeriod ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          Lägg till period
+        </button>
+        {addPeriodError && <p role="alert" className="text-sm text-red-600">Kunde inte lägga till perioden: {addPeriodError}</p>}
+      </div>
     </div>
   );
 }
@@ -486,15 +533,19 @@ function QuarterlyPlanCard({
 function QuarterPlanEditor({
   goal,
   quarter,
+  periodNumber,
   plan,
   planChanges,
   onSaveQuarterlyPlan,
+  onDeleteQuarterlyPlan,
 }: {
   goal: DevelopmentGoal;
   quarter: number;
+  periodNumber: number;
   plan?: IupQuarterlyPlan;
   planChanges: IupQuarterlyPlanChange[];
   onSaveQuarterlyPlan: (goalId: string, data: Partial<IupQuarterlyPlan>) => Promise<string | null>;
+  onDeleteQuarterlyPlan: (planId: string) => Promise<string | null>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState(plan?.focus ?? '');
@@ -548,7 +599,7 @@ function QuarterPlanEditor({
     setSaveFeedback(null);
     const error = await onSaveQuarterlyPlan(goal.id, {
       quarter,
-      focus: focus.trim() || `Kvartal ${quarter}`,
+      focus: focus.trim() || `Period ${quarter}`,
       start_month: startMonth,
       end_month: endMonth,
       what_to_develop: whatToDevelop.trim() || null,
@@ -561,39 +612,56 @@ function QuarterPlanEditor({
     setSaving(false);
     setSaveFeedback(error
       ? { type: 'error', message: `Kunde inte spara: ${error}` }
-      : { type: 'success', message: 'Kvartalet har sparats.' });
+      : { type: 'success', message: 'Perioden har sparats.' });
   };
 
   return (
     <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        className="w-full min-h-14 flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-      >
-        <span className="min-w-0 flex items-center gap-3">
-          <span className="font-bold text-sm text-black">Kvartal {quarter}</span>
-          <span className="truncate text-xs text-gray-500">{monthSpan}</span>
-        </span>
-        <span className="flex flex-shrink-0 items-center gap-2">
-          <span className={`rounded-md px-2 py-1 text-xs font-bold ${
-            plan?.status === 'klart'
-              ? 'bg-green-50 text-green-700'
-              : plan?.status === 'pagar'
-                ? 'bg-blue-50 text-blue-700'
-                : 'bg-gray-100 text-gray-500'
-          }`}>
-            {plan ? PLAN_STATUS_LABELS[plan.status] : 'Ej sparat'}
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          className="min-h-14 flex flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+        >
+          <span className="min-w-0 flex items-center gap-3">
+            <span className="font-bold text-sm text-black">Period {periodNumber}</span>
+            <span className="truncate text-xs text-gray-500">{monthSpan}</span>
           </span>
-          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-        </span>
-      </button>
+          <span className="flex flex-shrink-0 items-center gap-2">
+            <span className={`rounded-md px-2 py-1 text-xs font-bold ${
+              plan?.status === 'klart'
+                ? 'bg-green-50 text-green-700'
+                : plan?.status === 'pagar'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'bg-gray-100 text-gray-500'
+            }`}>
+              {plan ? PLAN_STATUS_LABELS[plan.status] : 'Ej sparat'}
+            </span>
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
+        {plan && (
+          <button
+            type="button"
+            title={`Ta bort period ${periodNumber}`}
+            aria-label={`Ta bort period ${periodNumber}`}
+            onClick={async () => {
+              if (!window.confirm(`Ta bort period ${periodNumber}? Periodens mål, spelarens reflektioner och ändringshistorik tas också bort.`)) return;
+              const error = await onDeleteQuarterlyPlan(plan.id);
+              if (error) setSaveFeedback({ type: 'error', message: `Kunde inte ta bort perioden: ${error}` });
+            }}
+            className="mr-3 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       {expanded && (
         <div className="border-t border-gray-200 p-4 space-y-4 bg-gray-50/60">
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Fokus för kvartalet" value={focus} onChange={setFocus} placeholder="Exempel: Mottagning med insidan" />
+            <FormField label="Fokus för perioden" value={focus} onChange={setFocus} placeholder="Exempel: Mottagning med insidan" />
             <FormField label="Vad ska spelaren utveckla?" value={whatToDevelop} onChange={setWhatToDevelop} placeholder="Beskriv utvecklingsmålet" textarea />
             <FormField label="Hur ska den utvecklas?" value={howToDevelop} onChange={setHowToDevelop} placeholder="Vilka aktiviteter och träningstillfällen?" textarea />
             <FormField label="Mätning" value={measurement} onChange={setMeasurement} placeholder="Hur mäts framsteg?" textarea />
@@ -675,7 +743,7 @@ function QuarterPlanEditor({
               className="inline-flex min-w-36 items-center justify-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors disabled:cursor-wait disabled:opacity-60"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Sparar...' : 'Spara kvartal'}
+              {saving ? 'Sparar...' : 'Spara period'}
             </button>
           </div>
         </div>
