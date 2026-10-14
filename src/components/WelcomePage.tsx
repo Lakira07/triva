@@ -49,11 +49,11 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
   return (
     <div className="min-h-screen overflow-hidden bg-[#f5f5f0] text-[#171717]">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
-        <a href="#" className="flex items-center gap-2.5" aria-label="Triva startsida">
+        <a href="#" className="flex items-center gap-2.5" aria-label="Trivva startsida">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#171717] text-white shadow-lg shadow-black/10">
             <Shield className="h-5 w-5" strokeWidth={2.5} />
           </span>
-          <span className="text-xl font-extrabold tracking-[-0.05em]">Triva</span>
+          <span className="text-xl font-extrabold tracking-[-0.05em]">Trivva</span>
         </a>
         <a
           href="#/demo"
@@ -73,7 +73,7 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
               Bättre lag börjar med att må bra.
             </h1>
             <p className="mt-7 max-w-xl text-lg leading-8 text-[#686860] sm:text-xl">
-              Triva hjälper tränare att förstå hur laget mår, fånga upp signaler i tid och skapa en tryggare vardag för varje spelare.
+              Trivva hjälper tränare att förstå hur laget mår, fånga upp signaler i tid och skapa en tryggare vardag för varje spelare.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <a
@@ -117,10 +117,10 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
           </div>
         </section>
 
-        <section className="border-y border-[#deded4] bg-white/55 px-5 py-9 sm:px-8 sm:py-11" aria-label="Trivas spelare och lag">
+        <section className="border-y border-[#deded4] bg-white/55 px-5 py-9 sm:px-8 sm:py-11" aria-label="Trivvas spelare och lag">
           <div className="mx-auto grid max-w-6xl gap-7 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-10">
             <div>
-              <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-[#ef5b3f]">Triva växer</p>
+              <p className="text-sm font-extrabold uppercase tracking-[0.14em] text-[#ef5b3f]">Trivva växer</p>
               <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.04em] sm:text-3xl">Tillsammans gör vi skillnad.</h2>
             </div>
             <div className="flex items-center gap-3 sm:border-l sm:border-[#deded4] sm:pl-8">
@@ -158,14 +158,14 @@ export default function WelcomePage({ onSelectPlayer, onSelectTrainer }: Welcome
 
         <section className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-20">
           <div className="flex flex-col items-start justify-between gap-8 rounded-[1.75rem] bg-[#d7f06c] px-6 py-8 sm:flex-row sm:items-center sm:px-10 sm:py-10">
-            <div><p className="text-sm font-extrabold uppercase tracking-[0.14em] text-black/55">Nyfiken på Triva?</p><h2 className="mt-2 text-3xl font-extrabold tracking-[-0.05em] sm:text-4xl">Se hur det kan fungera för ert lag.</h2></div>
+            <div><p className="text-sm font-extrabold uppercase tracking-[0.14em] text-black/55">Nyfiken på Trivva?</p><h2 className="mt-2 text-3xl font-extrabold tracking-[-0.05em] sm:text-4xl">Se hur det kan fungera för ert lag.</h2></div>
             <a href="#/demo" className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#171717] px-5 py-3.5 text-sm font-extrabold text-white transition-transform hover:-translate-y-0.5"><Mail className="h-4 w-4" /> Boka en demo</a>
           </div>
         </section>
 
         <section className="border-t border-[#deded4] bg-[#171717] px-5 py-8 text-white sm:px-8">
           <div className="mx-auto flex max-w-6xl flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="font-extrabold">Redan en del av Triva?</p><p className="mt-1 text-sm text-white/55">Gå direkt till din portal.</p></div>
+            <div><p className="font-extrabold">Redan en del av Trivva?</p><p className="mt-1 text-sm text-white/55">Gå direkt till din portal.</p></div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button onClick={onSelectPlayer} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 px-4 py-3 text-sm font-bold transition-colors hover:bg-white/10"><User className="h-4 w-4" /> Spelarportal</button>
               <button onClick={onSelectTrainer} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#171717] transition-transform hover:-translate-y-0.5"><Users className="h-4 w-4" /> Tränarportal</button>

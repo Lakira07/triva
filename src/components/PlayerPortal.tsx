@@ -479,7 +479,7 @@ export default function PlayerPortal() {
                 <ShieldIcon className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-lg font-extrabold text-gray-950">Triva</h1>
+                <h1 className="text-lg font-extrabold text-gray-950">Trivva</h1>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">{team!.name}</p>
               </div>
             </div>
@@ -1558,7 +1558,7 @@ function TeamLoginScreen({ onTeamFound }: { onTeamFound: (team: Team) => void })
             <ShieldIcon className="w-10 h-10" />
           </div>
         </div>
-        <h1 className="text-2xl font-bold text-black tracking-tight mb-1">Triva</h1>
+        <h1 className="text-2xl font-bold text-black tracking-tight mb-1">Trivva</h1>
         <p className="text-gray-500 text-sm leading-relaxed">
           Ange din lagkod för att hitta ditt lag.
         </p>
@@ -1660,7 +1660,7 @@ function PlayerLoginScreen({
             <ShieldIcon className="w-10 h-10" />
           </div>
         </div>
-        <h1 className="text-2xl font-bold text-black tracking-tight mb-1">Triva</h1>
+        <h1 className="text-2xl font-bold text-black tracking-tight mb-1">Trivva</h1>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
           {team.name}
         </p>

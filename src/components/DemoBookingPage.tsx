@@ -41,11 +41,11 @@ export default function DemoBookingPage() {
   return (
     <main className="min-h-screen bg-[#f5f5f0] px-5 text-[#171717] sm:px-8">
       <header className="mx-auto flex max-w-6xl items-center justify-between py-6">
-        <a href="#" className="flex items-center gap-2.5" aria-label="Till Trivas startsida">
+        <a href="#" className="flex items-center gap-2.5" aria-label="Till Trivvas startsida">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#171717] text-white shadow-lg shadow-black/10">
             <Shield className="h-5 w-5" strokeWidth={2.5} />
           </span>
-          <span className="text-xl font-extrabold tracking-[-0.05em]">Triva</span>
+          <span className="text-xl font-extrabold tracking-[-0.05em]">Trivva</span>
         </a>
         <a href="#" className="inline-flex items-center gap-2 text-sm font-bold transition-colors hover:text-[#ef5b3f]">
           <ArrowLeft className="h-4 w-4" /> Till startsidan

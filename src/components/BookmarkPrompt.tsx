@@ -47,8 +47,8 @@ export default function BookmarkPrompt() {
         <button
           onClick={openFromHelp}
           className="fixed top-4 right-4 z-40 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:text-black hover:shadow-xl hover:scale-105 transition-all group"
-          title="Hur lägger jag Triva på hemskärmen?"
-          aria-label="Hjälp: lägg Triva på hemskärmen"
+          title="Hur lägger jag Trivva på hemskärmen?"
+          aria-label="Hjälp: lägg Trivva på hemskärmen"
         >
           <HelpCircle className="w-5 h-5" />
           <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-black rounded-full ring-2 ring-white" />
@@ -74,9 +74,9 @@ export default function BookmarkPrompt() {
               <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center mb-4 ring-2 ring-white/20">
                 <Bookmark className="w-7 h-7 text-white" />
               </div>
-              <h2 className="text-xl font-bold tracking-tight">Lägg Triva på hemskärmen</h2>
+              <h2 className="text-xl font-bold tracking-tight">Lägg Trivva på hemskärmen</h2>
               <p className="text-sm text-white/70 mt-1 leading-relaxed">
-                Kom åt Triva snabbt — precis som en app, utan att behöva öppna webbläsaren varje gång.
+                Kom åt Trivva snabbt — precis som en app, utan att behöva öppna webbläsaren varje gång.
               </p>
             </div>
 
@@ -91,7 +91,7 @@ export default function BookmarkPrompt() {
                     Välj <span className="font-semibold">"Lägg till på hemskärmen"</span> i menyn.
                   </Step>
                   <Step number={3} icon={<Check className="w-4 h-4" />}>
-                    Tryck på <span className="font-semibold">"Lägg till"</span> — klart! Triva visas nu som en app på din hemskärm.
+                    Tryck på <span className="font-semibold">"Lägg till"</span> — klart! Trivva visas nu som en app på din hemskärm.
                   </Step>
                   <div className="flex items-center gap-2 text-xs text-gray-400 pt-1">
                     <Apple className="w-3.5 h-3.5" /> Fungerar på iPhone och iPad
@@ -108,7 +108,7 @@ export default function BookmarkPrompt() {
                     Välj <span className="font-semibold">"Lägg till på startsidan"</span> eller <span className="font-semibold">"Lägg till på hemskärmen"</span>.
                   </Step>
                   <Step number={3} icon={<Check className="w-4 h-4" />}>
-                    Tryck på <span className="font-semibold">"Lägg till"</span> — klart! Triva visas nu som en app på din hemskärm.
+                    Tryck på <span className="font-semibold">"Lägg till"</span> — klart! Trivva visas nu som en app på din hemskärm.
                   </Step>
                   <div className="flex items-center gap-2 text-xs text-gray-400 pt-1">
                     <Smartphone className="w-3.5 h-3.5" /> Fungerar på Android-telefoner

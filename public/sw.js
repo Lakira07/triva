@@ -6,7 +6,7 @@ self.addEventListener('push', (event) => {
     payload = { body: event.data?.text() ?? '' };
   }
 
-  const title = String(payload.title || 'Triva');
+  const title = String(payload.title || 'Trivva');
   const options = {
     body: String(payload.body || ''),
     icon: payload.icon || '/icons/icon.svg',

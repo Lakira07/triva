@@ -152,10 +152,10 @@ export default function NotificationBell() {
           {(showIOSInstallHint || showIOSPermissionPrompt) && (
             <div className="border-b border-gray-100 bg-[#f5f6f2] px-4 py-3">
               {showIOSInstallHint ? (
-                <p className="text-xs leading-5 text-gray-700">Installera Triva från Safari: tryck på Dela och välj Lägg till på hemskärmen för att använda pushnotiser.</p>
+                <p className="text-xs leading-5 text-gray-700">Installera Trivva från Safari: tryck på Dela och välj Lägg till på hemskärmen för att använda pushnotiser.</p>
               ) : (
                 <div className="flex items-start gap-3">
-                  <p className="flex-1 text-xs leading-5 text-gray-700">Tillåt notiser så får du viktiga uppdateringar även när Triva är stängt.</p>
+                  <p className="flex-1 text-xs leading-5 text-gray-700">Tillåt notiser så får du viktiga uppdateringar även när Trivva är stängt.</p>
                   <button type="button" onClick={() => void push.setPushEnabled(true)} disabled={push.working} className="shrink-0 rounded-md bg-[#234633] px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50">
                     Tillåt notiser
                   </button>

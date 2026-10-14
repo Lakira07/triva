@@ -1,4 +1,4 @@
-# triva
+# Trivva
 
 ## Environment setup
 
@@ -15,7 +15,7 @@ The Supabase values are required for authentication and database access. The Goo
 
 ## Mobile app builds
 
-Triva uses Capacitor to package the Vite app for iOS and Android. The website remains available separately.
+Trivva uses Capacitor to package the Vite app for iOS and Android. The website remains available separately.
 
 - Run `npm run mobile:sync` after web changes to build the site and copy it into the native projects.
 - Install Android Studio with its Android SDK to open and build the Android project with `npm run mobile:android`.
@@ -33,7 +33,7 @@ Before using invitations in a deployed environment, install the Supabase CLI and
 - Apply the database migration with `npx supabase db push`.
 - Deploy the invitation function with `npx supabase functions deploy invite-player`.
 - Deploy the admin team-invitation function with `npx supabase functions deploy create-team-invite`.
-- Set the `SITE_URL` Edge Function secret to the deployed website origin, for example `https://triva.example.com`.
+- Set the `SITE_URL` Edge Function secret to the deployed website origin, for example `https://trivva.example.com`.
 - Set the same origin as the Supabase Auth Site URL and add it to the Auth redirect URL allowlist.
 - Configure Supabase Auth email delivery and the invitation email template.
 - Admins can create teams with a trainer email. New trainers receive an invitation link, set their password, and are taken to their team dashboard; existing trainer accounts are assigned directly.
