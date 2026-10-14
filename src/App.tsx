@@ -80,6 +80,16 @@ export default function App() {
               window.location.hash = '#/dashboard';
               setRoute('trainer-dashboard');
             }
+          } else {
+            const { data: playerLink } = await supabase
+              .from('player_auth_links')
+              .select('player_id')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+            if (playerLink && !window.location.hash) {
+              window.location.hash = '#/player';
+              setRoute('player');
+            }
           }
         }
       }
